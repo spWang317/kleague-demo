@@ -128,29 +128,33 @@ function distMins(team) {
   const m = state.dist.mode === 'transit' ? cell.transit : cell.car;
   return (m == null) ? null : m;
 }
-function distanceBonus(team) {
-  if (!state.dist.region || state.dist.pref !== 'preferred') return 0;
-  const m = distMins(team);
-  if (m == null) return 0;
-  if (m <= 30) return 5;
-  if (m <= 60) return 4;
-  if (m <= 90) return 3;
-  if (m <= 120) return 2;
-  return 1;
-}
+// 거리 점수(선호)는 calcMatch에서 상대 인버스(5 × 최단시간/해당시간)로 계산
 
 // ===== Logic =====
+let distFallback = false;  // 거리 필수인데 0팀 → 가장 가까운 팀 1개 자동 배정 시 true
+function passesFilters(t) {
+  if (state.filters.leagueScope === 'k1' && LEAGUE[t] !== 'K1') return false;
+  if (state.filters.leagueScope === 'k2' && LEAGUE[t] !== 'K2') return false;
+  if (state.filters.aclOnly && !ACL.has(t)) return false;
+  return true;
+}
 function candidates() {
-  return TEAMS.filter(t => {
-    if (state.filters.leagueScope === 'k1' && LEAGUE[t] !== 'K1') return false;
-    if (state.filters.leagueScope === 'k2' && LEAGUE[t] !== 'K2') return false;
-    if (state.filters.aclOnly && !ACL.has(t)) return false;
+  distFallback = false;
+  let list = TEAMS.filter(t => {
+    if (!passesFilters(t)) return false;
     if (state.dist.region && state.dist.pref === 'required') {   // 거리 필수조건 = 하드 필터
       const m = distMins(t);
       if (m == null || m > state.dist.limit) return false;
     }
     return true;
   });
+  // 거리 필수인데 한 팀도 없으면 → 가장 가까운 팀 1개 자동 배정
+  if (list.length === 0 && state.dist.region && state.dist.pref === 'required') {
+    const base = TEAMS.filter(t => passesFilters(t) && distMins(t) != null)
+                      .sort((a, b) => distMins(a) - distMins(b));
+    if (base.length) { list = [base[0]]; distFallback = true; }
+  }
+  return list;
 }
 
 function calcMatch() {
@@ -158,6 +162,13 @@ function calcMatch() {
   const required = AXES.filter(a => state.prefs[a.key] === 'required');
   const preferred = AXES.filter(a => state.prefs[a.key] === 'preferred');
   const negative = AXES.filter(a => state.prefs[a.key] === 'negative');
+
+  // 거리 점수(선호): 후보 중 가장 가까운 팀 = 5점, 나머지는 5 × (최단시간 / 해당팀시간)
+  let tmin = null;
+  if (state.dist.region && state.dist.pref === 'preferred') {
+    const ms = cands.map(t => distMins(t)).filter(x => x != null);
+    if (ms.length) tmin = Math.min(...ms);
+  }
 
   return cands.map(t => {
     let reqMatched = 0;
@@ -171,7 +182,8 @@ function calcMatch() {
     let bonus = 0;
     for (const a of preferred) bonus += (SCORES[a.key][t] || 0);
     for (const a of negative) bonus += (6 - (SCORES[a.key][t] || 0));
-    const distBonus = distanceBonus(t);
+    let distBonus = 0;
+    if (tmin != null) { const m = distMins(t); if (m != null) distBonus = Math.round(5 * tmin / m * 10) / 10; }
     bonus += distBonus;
     return { team: t, reqMatched, reqHit, reqMiss, bonus, distBonus };
   }).sort((a,b) => b.reqMatched - a.reqMatched || b.bonus - a.bonus);
@@ -303,7 +315,11 @@ function renderResults(app) {
   </div>
   <h2 style="margin-bottom:16px;">매칭 결과</h2>`;
   if (state.dist.region && state.dist.pref === 'required') {
-    html += `<p class="sub" style="margin-bottom:14px;">📍 ${state.dist.region} 기준 · ${state.dist.mode==='transit'?'대중교통':'자차'} ${state.dist.limit}분 이내만</p>`;
+    if (distFallback) {
+      html += `<p class="sub" style="color:#fbbf24;margin-bottom:14px;">⚠️ ${state.dist.mode==='transit'?'대중교통':'자차'} ${state.dist.limit}분 이내인 팀이 없어, 가장 가까운 팀을 보여드려요.</p>`;
+    } else {
+      html += `<p class="sub" style="margin-bottom:14px;">📍 ${state.dist.region} 기준 · ${state.dist.mode==='transit'?'대중교통':'자차'} ${state.dist.limit}분 이내만</p>`;
+    }
   }
   if (results.length === 0) {
     html += `<div class="result-group"><div class="empty-result">조건에 맞는 팀이 없어요. 거리 기준 시간을 늘리거나 필수 조건을 줄여보세요.</div></div>`;
@@ -349,7 +365,7 @@ function teamCardHtml(r) {
       <div class="name">${r.team} <span style="color:#64748b;font-size:12px;">[${LEAGUE[r.team]}]</span></div>
       ${meta.join('')}
     </div>
-    <div class="score-badge">+${r.bonus}</div>
+    <div class="score-badge">+${Math.round(r.bonus*10)/10}</div>
   </div>`;
 }
 
