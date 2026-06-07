@@ -19,8 +19,7 @@
   .opt.selected { border-color: #3b82f6; background: #1e40af; }
   .opt .label { font-weight: 500; }
   .opt .desc { font-size: 12px; color: #94a3b8; margin-top: 4px; }
-  .preview { background: #0f172a; border-left: 3px solid #60a5fa; padding: 12px 16px; margin-top: 16px; border-radius: 4px; font-size: 13px; line-height: 1.7; }
-  .preview .label { color: #60a5fa; font-weight: 600; margin-right: 6px; }
+  select { background:#0f172a; color:#e2e8f0; border:1px solid #334155; padding:10px 12px; border-radius:6px; font-size:14px; }
   .nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 24px; }
   button { background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: 600; }
   button:hover { background: #2563eb; }
@@ -39,8 +38,6 @@
   .team-card .name { font-weight: 600; font-size: 17px; }
   .team-card .meta { font-size: 12px; color: #64748b; margin-top: 4px; }
   .team-card .score-badge { background: #3b82f6; color: white; padding: 4px 10px; border-radius: 12px; font-size: 13px; font-weight: 600; }
-  .missed { color: #f87171; font-size: 11px; margin-top: 2px; }
-  .matched { color: #86efac; font-size: 11px; margin-top: 2px; }
   .empty-result { color: #94a3b8; text-align: center; padding: 24px; }
 </style>
 </head>
@@ -62,28 +59,14 @@ const LEAGUE = Object.fromEntries([...TEAMS_K1.map(t=>[t,'K1']), ...TEAMS_K2.map
 // ACL 진출 경험 (최근 10년 1회 이상)
 const ACL = new Set(['전북','울산','포항','FC서울','수원삼성','제주','대구','강원','광주','대전','경남','인천']);
 
-// 팀별 광역 지역
-const TEAM_REGION = {
-  'FC서울':'서울', '서울E':'서울',
-  '수원삼성':'경기', '수원FC':'경기', '성남':'경기', '안양':'경기',
-  '부천':'경기', '안산':'경기', '김포':'경기', '용인':'경기', '화성':'경기', '파주':'경기',
-  '인천':'인천', '강원':'강원',
-  '대전':'대전', '충북청주':'충북', '충남아산':'충남', '천안':'충남',
-  '전북':'전북', '광주':'광주', '전남':'전남',
-  '대구':'대구', '포항':'경북', '경남':'경남', '김해':'경남',
-  '부산':'부산', '울산':'울산', '제주':'제주'
-};
+// 팀 이름 → 거리 매트릭스 키 (대부분 동일, 두 개만 다름)
+const MKEY = {'FC서울':'서울','수원삼성':'수원'};
+const mk = t => MKEY[t] || t;
+// 거주지 선택용 17개 광역 (매트릭스 출발지 키와 동일)
+const REGIONS = ['서울','경기','인천','강원','대전','세종','충남','충북','전북','광주','전남','대구','경북','부산','울산','경남','제주'];
 
-// 인접 광역 (+1점)
-const ADJACENT = {
-  '서울':['경기','인천'], '경기':['서울','인천','강원','충북','충남'], '인천':['서울','경기'],
-  '강원':['경기','충북','경북'], '충북':['경기','강원','충남','전북','경북','대전'],
-  '충남':['경기','충북','전북','대전'], '대전':['충남','충북'],
-  '전북':['충남','충북','전남','광주','경남','경북'], '전남':['전북','광주','경남'], '광주':['전남','전북'],
-  '경북':['강원','충북','대구','경남','전북'], '대구':['경북','경남'],
-  '경남':['경북','부산','울산','전북','전남','대구','김해'], '부산':['경남','울산'], '울산':['부산','경남','경북'],
-  '제주':[]
-};
+let DIST = null;  // distance_matrix.json (오프라인 사전계산: 자차=카카오, 대중교통=ODsay)
+fetch('data/distance_matrix.json').then(r=>r.json()).then(d=>{ DIST=d; if(state.step>=AXES.length+1) render(); }).catch(()=>{});
 
 const SCORES = {
   trophy: {전북:5,성남:5,포항:5,FC서울:4,수원삼성:4,울산:4,부산:3,광주:2,대구:2,대전:2,전남:2,제주:2,
@@ -111,7 +94,6 @@ const SCORES = {
   tactic: {강원:1,수원삼성:1,안양:1,인천:1,제주:1},
   rival: {울산:5,포항:5,FC서울:4,수원삼성:4,안양:4,전북:4,부천:3,인천:3,제주:3,대전:2,수원FC:2},
 };
-// fill missing tactics and rivals with 0
 TEAMS.forEach(t => {
   if (SCORES.tactic[t] === undefined) SCORES.tactic[t] = 0;
   if (SCORES.rival[t] === undefined) SCORES.rival[t] = 0;
@@ -128,55 +110,45 @@ const AXES = [
   {key:'tactic', name:'전술', q:'전술이 인상적인 팀이 좋아요?', neg:null},
   {key:'rival', name:'라이벌', q:'뜨거운 라이벌 매치가 있는 팀이 좋아요?', neg:null},
 ];
+const TOTAL = AXES.length + 1;  // 거리 카드 + 9개 취향 카드
 
 // ===== State =====
 const state = {
-  step: -1, // -1 = intro, 0..AXES.length-1 = cards, AXES.length = results
-  filters: { leagueScope: 'any', aclOnly: false, region: '' },
-  prefs: {}, // {axisKey: 'required'|'preferred'|'neutral'|'negative'}
+  step: -1, // -1=intro, 0=거리카드, 1..AXES.length=취향카드, AXES.length+1=결과
+  filters: { leagueScope: 'any', aclOnly: false },
+  dist: { region:'', mode:'car', pref:'', limit:60 },
+  prefs: {},
 };
 
-function bfsDistance(start, target) {
-  if (start === target) return 0;
-  const visited = new Set([start]);
-  let queue = [[start, 0]];
-  while (queue.length) {
-    const [node, dist] = queue.shift();
-    for (const next of (ADJACENT[node] || [])) {
-      if (next === target) return dist + 1;
-      if (!visited.has(next)) { visited.add(next); queue.push([next, dist + 1]); }
-    }
-  }
-  return Infinity;
+// ===== Distance =====
+function distMins(team) {
+  if (!state.dist.region || !DIST) return null;
+  const cell = (DIST[state.dist.region] || {})[mk(team)];
+  if (!cell) return null;
+  const m = state.dist.mode === 'transit' ? cell.transit : cell.car;
+  return (m == null) ? null : m;
 }
-
 function distanceBonus(team) {
-  if (!state.filters.region) return 0;
-  const tr = TEAM_REGION[team];
-  const d = bfsDistance(state.filters.region, tr);
-  if (d === 0) return 5;
-  if (d === 1) return 4;
-  if (d === 2) return 3;
-  if (d === 3) return 2;
-  return 1; // 4+ or Infinity (e.g., 제주 ↔ 본토)
+  if (!state.dist.region || state.dist.pref !== 'preferred') return 0;
+  const m = distMins(team);
+  if (m == null) return 0;
+  if (m <= 30) return 5;
+  if (m <= 60) return 4;
+  if (m <= 90) return 3;
+  if (m <= 120) return 2;
+  return 1;
 }
 
 // ===== Logic =====
-function preview(axisKey) {
-  const sc = SCORES[axisKey];
-  const groups = {};
-  TEAMS.forEach(t => {
-    const s = sc[t] || 0;
-    (groups[s] = groups[s] || []).push(t);
-  });
-  return groups;
-}
-
 function candidates() {
   return TEAMS.filter(t => {
     if (state.filters.leagueScope === 'k1' && LEAGUE[t] !== 'K1') return false;
     if (state.filters.leagueScope === 'k2' && LEAGUE[t] !== 'K2') return false;
     if (state.filters.aclOnly && !ACL.has(t)) return false;
+    if (state.dist.region && state.dist.pref === 'required') {   // 거리 필수조건 = 하드 필터
+      const m = distMins(t);
+      if (m == null || m > state.dist.limit) return false;
+    }
     return true;
   });
 }
@@ -191,7 +163,6 @@ function calcMatch() {
     let reqMatched = 0;
     const reqHit = [], reqMiss = [];
     for (const a of required) {
-      // "필수 만족" = 4점 이상 (또는 max score for tactic/rival which can be 0/1)
       const max = Math.max(...Object.values(SCORES[a.key]));
       const threshold = max >= 4 ? 4 : Math.ceil(max * 0.8);
       if (SCORES[a.key][t] >= threshold) { reqMatched++; reqHit.push(a.name); }
@@ -211,7 +182,8 @@ function render() {
   const app = document.getElementById('app');
   app.innerHTML = '';
   if (state.step === -1) renderIntro(app);
-  else if (state.step < AXES.length) renderCard(app, state.step);
+  else if (state.step === 0) renderDistCard(app);
+  else if (state.step <= AXES.length) renderCard(app, state.step - 1);
   else renderResults(app);
 }
 
@@ -220,33 +192,13 @@ function renderIntro(app) {
     <div class="card">
       <h2>시작하기</h2>
       <p class="q">K리그에서 응원할 팀을 찾아드릴게요</p>
-      <p style="color:#94a3b8;font-size:14px;line-height:1.6;margin-bottom:16px;">9개 카드에 답하면 본인 취향에 맞는 팀을 추천해드립니다. 각 카드에서:<br>
-      <strong>꼭 그래야</strong> = 그 조건 만족 못하는 팀은 탈락 (너무 많이 고르면 결과 없을 수 있음)<br>
+      <p style="color:#94a3b8;font-size:14px;line-height:1.6;margin-bottom:16px;">거리 + 9개 취향 카드에 답하면 본인에게 맞는 팀을 추천해드립니다. 각 카드에서:<br>
+      <strong>꼭 그래야</strong> = 그 조건 만족 못하는 팀은 탈락<br>
       <strong>그러면 좋아요</strong> = 점수 가산<br>
       <strong>상관없음</strong> = 무시<br>
       <strong>오히려 반대</strong> = 반대 방향 가산 (일부 카드만)</p>
       <div class="filters">
-        <div style="font-size:13px;color:#94a3b8;margin-bottom:4px;">거주 지역 (가까운 팀에 가산점)</div>
-        <select id="region" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:8px 12px;border-radius:6px;font-size:14px;">
-          <option value="">거리 신경 안 써요</option>
-          <option value="서울">서울</option>
-          <option value="경기">경기</option>
-          <option value="인천">인천</option>
-          <option value="강원">강원</option>
-          <option value="대전">대전</option>
-          <option value="충남">충남 (세종 포함)</option>
-          <option value="충북">충북</option>
-          <option value="전북">전북</option>
-          <option value="광주">광주</option>
-          <option value="전남">전남</option>
-          <option value="대구">대구</option>
-          <option value="경북">경북</option>
-          <option value="부산">부산</option>
-          <option value="울산">울산</option>
-          <option value="경남">경남</option>
-          <option value="제주">제주</option>
-        </select>
-        <div style="font-size:13px;color:#94a3b8;margin-top:12px;margin-bottom:4px;">리그 범위</div>
+        <div style="font-size:13px;color:#94a3b8;margin-bottom:4px;">리그 범위</div>
         <label><input type="radio" name="leagueScope" value="any" checked> 1부·2부 상관없어요</label>
         <label><input type="radio" name="leagueScope" value="k1"> K리그 1부 팀만</label>
         <label><input type="radio" name="leagueScope" value="k2"> K리그 2부 팀만</label>
@@ -256,6 +208,47 @@ function renderIntro(app) {
       <div class="nav">
         <span></span>
         <button onclick="startCards()">시작 →</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderDistCard(app) {
+  const d = state.dist;
+  const opts = [
+    {k:'required',  label:'꼭 가까워야 해요 (필수)', desc:'정한 시간 이내인 팀만 남겨요'},
+    {k:'preferred', label:'가까울수록 좋아요 (점수)', desc:'가까운 팀일수록 점수 가산'},
+    {k:'neutral',   label:'거리는 상관없어요',        desc:'거리 무시'},
+  ];
+  const nextDisabled = d.region && !d.pref;   // 지역 골랐으면 조건도 선택해야
+  app.innerHTML = `
+    <div class="progress"><div class="progress-bar" style="width:${100/TOTAL}%"></div></div>
+    <div class="card">
+      <h2>카드 1 / ${TOTAL} — 경기장 접근성</h2>
+      <p class="q">직관 가려면 가까워야죠. 어디 사세요?</p>
+      <select id="dregion" onchange="setDistRegion(this.value)">
+        <option value="">— 지역 선택 (또는 거리 신경 안 써요) —</option>
+        ${REGIONS.map(r=>`<option value="${r}" ${d.region===r?'selected':''}>${r}</option>`).join('')}
+      </select>
+      <div style="margin-top:18px;${d.region?'':'opacity:.35;pointer-events:none;'}">
+        <div style="font-size:13px;color:#94a3b8;margin-bottom:6px;">이동수단</div>
+        <div class="options" style="flex-direction:row;">
+          <div class="opt ${d.mode==='car'?'selected':''}" style="flex:1;text-align:center;" onclick="setDistMode('car')">🚗 자차</div>
+          <div class="opt ${d.mode==='transit'?'selected':''}" style="flex:1;text-align:center;" onclick="setDistMode('transit')">🚇 대중교통</div>
+        </div>
+        <div style="font-size:13px;color:#94a3b8;margin:16px 0 6px;">조건</div>
+        <div class="options">
+          ${opts.map(o=>`<div class="opt ${d.pref===o.k?'selected':''}" onclick="selectDistPref('${o.k}')">
+            <div class="label">${o.label}</div><div class="desc">${o.desc}</div></div>`).join('')}
+        </div>
+        ${d.pref==='required' ? `<div style="margin-top:12px;font-size:14px;color:#cbd5e1;">기준 시간 (${d.mode==='transit'?'대중교통':'자차'}):
+          <select id="dlimit" onchange="setDistLimit(this.value)">
+            ${[30,60,90,120].map(n=>`<option value="${n}" ${d.limit==n?'selected':''}>${n}분 이내</option>`).join('')}
+          </select></div>` : ''}
+      </div>
+      <div class="nav">
+        <button class="secondary" onclick="prev()">← 이전</button>
+        <button onclick="next()" ${nextDisabled?'disabled':''}>다음 →</button>
       </div>
     </div>
   `;
@@ -274,9 +267,9 @@ function renderCard(app, i) {
   if (a.neg) opts.push({k:'negative', label:a.neg, desc:'반대 방향 가산'});
 
   app.innerHTML = `
-    <div class="progress"><div class="progress-bar" style="width:${(i+1)/AXES.length*100}%"></div></div>
+    <div class="progress"><div class="progress-bar" style="width:${(i+2)/TOTAL*100}%"></div></div>
     <div class="card">
-      <h2>카드 ${i+1} / ${AXES.length} — ${a.name}</h2>
+      <h2>카드 ${i+2} / ${TOTAL} — ${a.name}</h2>
       <p class="q">${a.q}</p>
       <div class="options">
         ${opts.map(o => `
@@ -288,7 +281,7 @@ function renderCard(app, i) {
       </div>
       ${tooMany && cur === 'required' ? '<div class="warning">⚠️ 필수 조건이 ' + requiredCount + '개입니다. 너무 많으면 매칭 결과가 없을 수 있어요.</div>' : ''}
       <div class="nav">
-        <button class="secondary" onclick="prev()" ${i===0?'disabled':''}>← 이전</button>
+        <button class="secondary" onclick="prev()">← 이전</button>
         <button onclick="next()" ${!cur?'disabled':''}>${i===AXES.length-1?'결과 보기':'다음 →'}</button>
       </div>
     </div>
@@ -296,11 +289,11 @@ function renderCard(app, i) {
 }
 
 function renderResults(app) {
+  if (state.dist.region && !DIST) { app.innerHTML = '<div class="empty-result">거리 데이터 불러오는 중…</div>'; return; }
   const results = calcMatch();
   const required = AXES.filter(a => state.prefs[a.key] === 'required');
   const reqCount = required.length;
 
-  // Group by reqMatched
   const groups = {};
   results.forEach(r => (groups[r.reqMatched] = groups[r.reqMatched] || []).push(r));
 
@@ -309,39 +302,47 @@ function renderResults(app) {
     <span></span>
   </div>
   <h2 style="margin-bottom:16px;">매칭 결과</h2>`;
+  if (state.dist.region && state.dist.pref === 'required') {
+    html += `<p class="sub" style="margin-bottom:14px;">📍 ${state.dist.region} 기준 · ${state.dist.mode==='transit'?'대중교통':'자차'} ${state.dist.limit}분 이내만</p>`;
+  }
+  if (results.length === 0) {
+    html += `<div class="result-group"><div class="empty-result">조건에 맞는 팀이 없어요. 거리 기준 시간을 늘리거나 필수 조건을 줄여보세요.</div></div>`;
+    app.innerHTML = html; return;
+  }
   if (reqCount === 0) {
     html += `<div class="result-group">
-      <h3>점수 순위 (필수 조건 없음)</h3>
-      ${results.slice(0,8).map(r => teamCardHtml(r, false)).join('')}
+      <h3>점수 순위${state.dist.region?' (거리 가산 포함)':''}</h3>
+      ${results.slice(0,8).map(r => teamCardHtml(r)).join('')}
     </div>`;
   } else {
-    // Show groups from high to low reqMatched
     let foundAny = false;
     for (let k = reqCount; k >= 0; k--) {
       if (!groups[k] || groups[k].length === 0) continue;
       const isFull = k === reqCount;
       const isFallback = !isFull && !foundAny;
-      const labelClass = isFull ? '' : 'fallback';
       const header = isFull
         ? `<h3>모든 필수 조건 만족 (${k}/${reqCount})</h3>`
-        : `<h3 class="${labelClass}">필수 ${k}/${reqCount}개 만족 (${isFallback?'⚠️ 모두 만족하는 팀 없음 — 가장 근접':'그 외'})</h3>`;
+        : `<h3 class="fallback">필수 ${k}/${reqCount}개 만족 (${isFallback?'⚠️ 모두 만족하는 팀 없음 — 가장 근접':'그 외'})</h3>`;
       html += `<div class="result-group">
         ${header}
-        ${groups[k].slice(0,8).map(r => teamCardHtml(r, true)).join('')}
+        ${groups[k].slice(0,8).map(r => teamCardHtml(r)).join('')}
       </div>`;
       if (isFull) foundAny = true;
-      if (!isFull && groups[k].length > 0) break; // show only the highest fallback tier
+      if (!isFull && groups[k].length > 0) break;
     }
   }
-
   app.innerHTML = html;
 }
 
-function teamCardHtml(r, showReq) {
+function teamCardHtml(r) {
   const meta = [];
-  if (r.distBonus > 0 && state.filters.region) {
-    const labels = {5:'같은 광역', 4:'인접', 3:'2단계', 2:'3단계', 1:'먼 거리'};
-    meta.push(`<div style="color:#60a5fa;font-size:11px;margin-top:2px;">📍 ${TEAM_REGION[r.team]} — ${labels[r.distBonus]}</div>`);
+  if (state.dist.region) {
+    const m = distMins(r.team);
+    if (m != null) {
+      const ic = state.dist.mode === 'transit' ? '🚇' : '🚗';
+      const mode = state.dist.mode === 'transit' ? '대중교통' : '자차';
+      meta.push(`<div class="meta" style="color:#60a5fa;">${ic} ${mode} ${m}분${r.distBonus?` (거리 +${r.distBonus})`:''}</div>`);
+    }
   }
   return `<div class="team-card">
     <div>
@@ -357,17 +358,17 @@ function startCards() {
   const scope = document.querySelector('input[name="leagueScope"]:checked');
   state.filters.leagueScope = scope ? scope.value : 'any';
   state.filters.aclOnly = document.getElementById('aclOnly').checked;
-  state.filters.region = document.getElementById('region').value || '';
   state.step = 0;
   render();
 }
-function selectOpt(axisKey, opt) {
-  state.prefs[axisKey] = opt;
-  render();
-}
+function setDistRegion(v) { state.dist.region = v; if(!v) state.dist.pref=''; render(); }
+function setDistMode(m) { state.dist.mode = m; render(); }
+function selectDistPref(k) { state.dist.pref = k; render(); }
+function setDistLimit(n) { state.dist.limit = +n; render(); }
+function selectOpt(axisKey, opt) { state.prefs[axisKey] = opt; render(); }
 function next() { state.step++; render(); }
 function prev() { state.step--; render(); }
-function restart() { state.step = -1; state.prefs = {}; render(); }
+function restart() { state.step = -1; state.prefs = {}; state.dist = { region:'', mode:'car', pref:'', limit:60 }; render(); }
 
 render();
 </script>
