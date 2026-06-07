@@ -60,7 +60,7 @@
   <!-- 스타일 (임베딩) -->
   <div id="v-style" class="hidden">
     <a class="back2" data-v="choose">← 뒤로</a>
-    <p class="sub" style="margin-top:10px;">원하는 플레이 스타일을 <b>자유롭게 설명</b>하면, AI가 가장 비슷한 K리그 선수를 찾아줍니다.<br>(닮은 선수들 중 <b>1부 → 국가대표 출신 → 출장경기 많은</b> 순)</p>
+    <p class="sub" style="margin-top:10px;">원하는 플레이 스타일을 <b>자유롭게 설명</b>하면, AI가 가장 비슷한 K리그 선수를 찾아줍니다.<br>(닮은 선수들 중 <b>1부 → 국가대표 경기 많은</b> 순)</p>
     <div class="card">
       <textarea id="q" placeholder="예) 데 브라위너처럼 시야가 넓고 정확한 패스로 경기를 풀어가는 미드필더"></textarea>
       <div class="chips" id="chips"></div>
@@ -70,7 +70,7 @@
     <div id="results"></div>
     <p class="foot">
       엔진: 문장 임베딩 <b>multilingual-e5</b> · 코사인 유사도 (브라우저에서 직접 실행 · 서버/키 없음)<br>
-      정렬: 스타일 유사도로 후보 → 1부 → 국가대표 출신 → 출장경기 많은 순. ※ 출장수는 위키백과 통산 추정치.
+      정렬: 스타일 유사도로 후보 → 1부 리그 → 국가대표 경기 많은 순.
     </p>
   </div>
 </div>
@@ -113,17 +113,16 @@ async function run(){
   const qv=Array.from(out.data);
   const scored=DATA.entities.map(x=>({...x,sim:dot(qv,x.vec)}));
   const pool=scored.sort((a,b)=>b.sim-a.sim).slice(0,18);
-  const key=x=>[x.league==='K1'?0:1, x.nt?0:1, -(x.apps||0)];   // 1부→국대출신→출장 내림차순
+  const key=x=>[x.league==='K1'?0:1, -(x.ntCaps||0)];   // 1부 → 국가대표 경기 많은 순
   pool.sort((a,b)=>{const ka=key(a),kb=key(b);for(let i=0;i<ka.length;i++){if(ka[i]!==kb[i])return ka[i]-kb[i];}return 0;});
   const top=pool.slice(0,8);
   let html='<h2>이 스타일과 닮은 K리그 선수</h2>';
   top.forEach((c,i)=>{
     const lg=c.league==='K1'?'1부':'2부';
-    const apps=c.apps?`통산 ${c.apps}경기`:'출장 정보 없음';
-    const nt=c.nt?` · 국대 ${c.nt}`:'';
+    const nt=c.nt?` · 국가대표 ${c.nt}`:'';
     html+=`<div class="row"><div class="top">
       <div><span class="rank">${i+1}</span><span class="nm">${c.name}</span>
-        <div class="meta">${c.team} (${lg}) · ${c.pos} · ${apps}${nt}</div></div>
+        <div class="meta">${c.team} (${lg}) · ${c.pos}${nt}</div></div>
       <div class="sim">유사도 ${Math.round(c.sim*100)}%</div></div>
       <div class="desc">${c.style.slice(0,160)}${c.style.length>160?'…':''}</div></div>`;
   });
