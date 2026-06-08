@@ -70,7 +70,7 @@
     <div id="results"></div>
     <p class="foot">
       엔진: 문장 임베딩 <b>multilingual-e5</b> · 코사인 유사도 (브라우저에서 직접 실행 · 서버/키 없음)<br>
-      정렬: 스타일 유사도로 후보 → 1부 리그 → 국가대표 경기 많은 순.
+      정렬: 스타일 유사도에 국가대표 경력·1부 리그 가중치를 더해 순위 산정.
     </p>
   </div>
 </div>
@@ -118,9 +118,14 @@ async function run(){
   let qpos=null; for(const [g,kws] of POSQ){ if(kws.some(k=>q.includes(k))){ qpos=g; break; } }
   let cand=scored.slice(0,40);
   if(qpos){ const f=cand.filter(x=>x.posGroup===qpos); if(f.length) cand=f; }  // 비면 필터 해제
-  const pool=cand.slice(0,18);
-  const key=x=>[x.league==='K1'?0:1, -(x.ntCaps||0)];   // 1부 → 국가대표 경기 많은 순
-  pool.sort((a,b)=>{const ka=key(a),kb=key(b);for(let i=0;i<ka.length;i++){if(ka[i]!==kb[i])return ka[i]-kb[i];}return 0;});
+  const pool=cand.slice(0,20);
+  pool.forEach(x=>{
+    const ntB=Math.min(0.04, 0.006*Math.sqrt(x.ntCaps||0));   // 성인 국가대표 경기수 가중
+    const awB=Math.min(0.04, 0.012*(x.awardScore||0));        // 수상기록 가중(데이터 추후)
+    const k1B=x.league==='K1'?0.01:0;                         // 1부 소폭 가산
+    x.score=x.sim+ntB+awB+k1B;
+  });
+  pool.sort((a,b)=>b.score-a.score);   // 유사도 + establishment 가중 합
   const top=pool.slice(0,8);
   let html='<h2>이 스타일과 닮은 K리그 선수</h2>';
   top.forEach((c,i)=>{
