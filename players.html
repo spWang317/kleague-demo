@@ -116,9 +116,9 @@ async function run(){
   const POSQ=[['GK',['골키퍼','키퍼','수문장']],['DF',['수비수','센터백','풀백','윙백','수비']],
               ['MF',['미드필더','미드필드','중원','볼란치']],['FW',['공격수','스트라이커','윙어','윙','포워드','최전방','측면 공격']]];
   let qpos=null; for(const [g,kws] of POSQ){ if(kws.some(k=>q.includes(k))){ qpos=g; break; } }
-  let cand=scored.slice(0,40);
-  if(qpos){ const f=cand.filter(x=>x.posGroup===qpos); if(f.length) cand=f; }  // 비면 필터 해제
-  const pool=cand.slice(0,20);
+  let cand=scored;
+  if(qpos){ const f=cand.filter(x=>x.posGroup===qpos); if(f.length) cand=f; }  // 포지션 필터(없으면 전체)
+  const pool=cand.slice(0,30);   // 포지션 내 유사도 상위 후보
   pool.forEach(x=>{
     const ntB=Math.min(0.04, 0.006*Math.sqrt(x.ntCaps||0));   // 성인 국가대표 경기수 가중
     const awB=Math.min(0.04, 0.012*(x.awardScore||0));        // 수상기록 가중
