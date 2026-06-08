@@ -131,9 +131,10 @@ async function run(){
   top.forEach((c,i)=>{
     const lg=c.league==='K1'?'1부':'2부';
     const nt=c.nt?` · 국가대표 ${c.nt}`:'';
+    const aw=(c.awards&&c.awards.length)?`<div class="meta" style="color:#fbbf24;">🏆 ${c.awards.slice(0,2).join(' · ')}${c.awards.length>2?` 외 ${c.awards.length-2}`:''}</div>`:'';
     html+=`<div class="row"><div class="top">
       <div><span class="rank">${i+1}</span><span class="nm">${c.name}</span>
-        <div class="meta">${c.team} (${lg}) · ${c.pos}${nt}</div></div>
+        <div class="meta">${c.team} (${lg}) · ${c.pos}${nt}</div>${aw}</div>
       <div class="sim">유사도 ${Math.round(c.sim*100)}%</div></div>
       <div class="desc">${c.style.slice(0,160)}${c.style.length>160?'…':''}</div></div>`;
   });
