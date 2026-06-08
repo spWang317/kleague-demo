@@ -219,9 +219,14 @@ function renderIntro(app) {
         <div style="font-size:13px;color:#94a3b8;margin-top:8px;margin-bottom:4px;">국제대회</div>
         <label><input type="checkbox" id="aclOnly"> 최근 10년 ACL 진출 경험 있는 팀만 보기</label>
       </div>
+      <div style="margin-top:16px;border-top:1px solid #334155;padding-top:14px;">
+        <div style="font-size:13px;color:#a78bfa;margin-bottom:6px;">🤖 또는 한 문장으로 — AI가 카드를 대신 채워드려요 (Claude 키 입력 시)</div>
+        <input id="nlq" placeholder="예: 집에서 가깝고 응원 뜨거운 우승권 팀" style="width:100%;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:9px 11px;font-size:14px;">
+        <button onclick="aiSearch(this)" style="margin-top:8px;width:100%;background:#7c3aed;">AI로 바로 찾기 →</button>
+      </div>
       <div class="nav">
         <span></span>
-        <button onclick="startCards()">시작 →</button>
+        <button onclick="startCards()">카드로 직접 →</button>
       </div>
     </div>
   `;
@@ -349,7 +354,8 @@ function renderResults(app) {
       if (!isFull && groups[k].length > 0) break;
     }
   }
-  app.innerHTML = html;
+  app.innerHTML = html + '<div id="whybox" style="margin-top:4px;"></div>';
+  whyThisTeam(results);
 }
 
 function teamCardHtml(r) {
@@ -387,6 +393,54 @@ function selectOpt(axisKey, opt) { state.prefs[axisKey] = opt; render(); }
 function next() { state.step++; render(); }
 function prev() { state.step--; render(); }
 function restart() { state.step = -1; state.prefs = {}; state.dist = { region:'', mode:'car', pref:'', limit:60 }; render(); }
+
+// ===== AI 에이전트 (Claude, 키는 localStorage 공유) =====
+async function claudeText(prompt, key, maxTok) {
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:maxTok||600,messages:[{role:'user',content:prompt}]})
+  });
+  if(!r.ok) throw new Error('API '+r.status);
+  const d=await r.json();
+  return (d.content && d.content[0] && d.content[0].text || '').trim();
+}
+async function whyThisTeam(results) {
+  const key=(localStorage.getItem('anthropic_key')||'').trim();
+  if(!key || !results.length) return;
+  const top=results[0];
+  const reqN=AXES.filter(a=>state.prefs[a.key]==='required').map(a=>a.name);
+  const prefN=AXES.filter(a=>state.prefs[a.key]==='preferred').map(a=>a.name);
+  const prof=AXES.filter(a=>['required','preferred'].includes(state.prefs[a.key])).map(a=>`${a.name} ${SCORES[a.key][top.team]}/5`);
+  const dist=state.dist.region&&distMins(top.team)!=null ? `거주지에서 ${state.dist.mode==='transit'?'대중교통':'자차'} ${distMins(top.team)}분` : '';
+  const box=document.getElementById('whybox');
+  box.innerHTML='<div class="result-group" style="border-color:#7c3aed;"><h3 style="color:#a78bfa;">🤖 왜 이 팀일까요?</h3><div class="empty-result">AI 분석 중…</div></div>';
+  const prompt=`사용자가 K리그 입덕할 팀을 찾는다. 추천 1위: "${top.team}".\n사용자가 중시한 기준 — 필수: [${reqN.join(', ')||'없음'}], 선호: [${prefN.join(', ')||'없음'}].\n${top.team}의 해당 기준 점수(5점 만점): ${prof.join(', ')||'정보 없음'}. ${dist?dist+'.':''}\n[규칙] 위에 주어진 점수·거리·사용자 선호만 근거로, 이 팀을 왜 추천하는지 2~3문장으로 따뜻하게 설득하라. 팀의 역사·선수·성적 등 주어지지 않은 사실은 절대 지어내지 마라. 한국어 평어체로.`;
+  try{
+    const txt=await claudeText(prompt, key, 400);
+    box.innerHTML=`<div class="result-group" style="border-color:#7c3aed;"><h3 style="color:#a78bfa;">🤖 왜 ${top.team}일까요?</h3><div style="color:#cbd5e1;font-size:14px;line-height:1.65;">${txt}</div></div>`;
+  }catch(e){ box.innerHTML=''; }
+}
+async function aiSearch(btn) {
+  const key=(localStorage.getItem('anthropic_key')||'').trim();
+  const q=document.getElementById('nlq').value.trim();
+  if(!q) return;
+  if(!key){ alert('AI 검색은 Claude API 키가 필요해요. "선수 추천 → 플레이스타일 → ⚙️ AI 추천 강화"에서 키를 한 번 입력하면 여기서도 쓰여요.'); return; }
+  const scope=document.querySelector('input[name="leagueScope"]:checked');
+  state.filters.leagueScope=scope?scope.value:'any';
+  state.filters.aclOnly=document.getElementById('aclOnly').checked;
+  btn.textContent='AI 분석 중…'; btn.disabled=true;
+  const axesList=AXES.map(a=>`${a.key}(${a.name})`).join(', ');
+  const prompt=`사용자 요청: "${q}"\n아래 K리그 팀 선호 축을 요청에 맞게 분류하라. 축: ${axesList}.\n각 축 값: "required"(꼭) / "preferred"(있으면좋음) / "neutral"(무관) / "negative"(반대, trophy·recent·cheer만 의미있음).\n거리: 지역명이 있으면 region을 [서울,경기,인천,강원,대전,세종,충남,충북,전북,광주,전남,대구,경북,부산,울산,경남,제주] 중 하나로, 없으면 "". mode는 car/transit, distPref는 required/preferred/neutral, limit은 분(숫자).\n반드시 JSON만 출력: {"prefs":{${AXES.map(a=>'"'+a.key+'":"..."').join(',')}},"region":"","mode":"car","distPref":"neutral","limit":60}`;
+  try{
+    let t=await claudeText(prompt, key, 700);
+    t=t.replace(/^```(json)?/i,'').replace(/```$/,'').trim();
+    const j=JSON.parse(t);
+    state.prefs={}; AXES.forEach(a=>{ state.prefs[a.key]=j.prefs&&j.prefs[a.key]||'neutral'; });
+    state.dist={region:j.region||'', mode:j.mode||'car', pref:(j.region?(j.distPref||'preferred'):''), limit:+j.limit||60};
+    state.step=AXES.length+1; render();
+  }catch(e){ btn.textContent='AI로 바로 찾기 →'; btn.disabled=false; alert('AI 분석 실패: '+(e.message||e)); }
+}
 
 render();
 </script>
