@@ -67,6 +67,11 @@
       <button class="go" id="go" disabled>AI 모델 불러오는 중…</button>
       <div class="status" id="status">최초 1회 모델 다운로드(약 1분). 이후엔 바로 동작합니다.</div>
     </div>
+    <details style="margin-top:10px;">
+      <summary style="color:#60a5fa;font-size:12.5px;cursor:pointer;">⚙️ AI 추천 강화 — Claude API 키 (선택)</summary>
+      <input id="akey" type="password" placeholder="sk-ant-..." autocomplete="off" style="width:100%;margin-top:8px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:9px 11px;font-size:13px;">
+      <div style="font-size:11px;color:#64748b;margin-top:5px;line-height:1.5;">키는 이 브라우저에만 저장(localStorage), 서버 안 거침. 입력하면 Claude가 <b>우리 데이터(검증된 후보)만 근거로</b> 재랭킹+추천이유 생성(외부 지식 금지=할루시네이션 차단). 없으면 임베딩 순위.</div>
+    </details>
     <div id="results"></div>
     <p class="foot">
       엔진: 문장 임베딩 <b>multilingual-e5</b> · 코사인 유사도 (브라우저에서 직접 실행 · 서버/키 없음)<br>
@@ -90,6 +95,9 @@ document.querySelectorAll('[data-v]').forEach(b=>b.addEventListener('click',()=>
 const EX=['데 브라위너처럼 시야가 넓고 패스가 좋은 미드필더','수비가 단단하고 공중볼에 강한 센터백',
           '빠른 스피드로 측면을 돌파하는 윙어','박스 안 결정력이 좋은 스트라이커','탈압박과 드리블이 좋고 과감하게 슛하는 공격수'];
 EX.forEach(t=>{const c=document.createElement('span');c.className='chip';c.textContent=t;c.onclick=()=>{$('q').value=t;};$('chips').appendChild(c);});
+// ---- API 키 저장/불러오기 (이 브라우저 localStorage) ----
+const _ak=localStorage.getItem('anthropic_key'); if(_ak) $('akey').value=_ak;
+$('akey').addEventListener('input', e=>localStorage.setItem('anthropic_key', e.target.value.trim()));
 
 // ---- 모델/데이터 (스타일 화면 진입 시 1회 로드) ----
 let DATA=null, extractor=null, loading=false;
@@ -129,20 +137,49 @@ async function run(){
     if(la!==lb) return la-lb;
     return b.score-a.score;
   });
-  const top=pool.slice(0,8);
-  let html='<h2>이 스타일과 닮은 K리그 선수</h2>';
-  top.forEach((c,i)=>{
-    const lg=c.league==='K1'?'1부':'2부';
+  // AI 강화: 키 있으면 Claude가 우리 후보(검증 데이터)만 근거로 재랭킹+이유. 없으면 임베딩 순위.
+  const key=(localStorage.getItem('anthropic_key')||'').trim();
+  if(key){
+    try{
+      $('status').textContent='🤖 Claude가 후보를 분석·추천 중…';
+      const picks=await claudeRerank(q, cand.slice(0,20), key);
+      const byName=Object.fromEntries(DATA.entities.map(x=>[x.name,x]));
+      renderRows(picks.slice(0,8).map(p=>({c:byName[p.name]||{name:p.name},reason:p.reason})), true);
+      $('status').textContent='✅ Claude 추천 (우리 데이터 기반 · 외부지식 미사용)';
+      $('go').disabled=false; $('go').textContent='닮은 선수 찾기'; return;
+    }catch(e){ $('status').textContent='AI 강화 실패('+(e.message||e)+') — 임베딩 순위로 표시'; }
+  }
+  renderRows(pool.slice(0,8).map(c=>({c})), false);
+  $('go').disabled=false; $('go').textContent='닮은 선수 찾기';
+}
+
+function renderRows(items, ai){
+  let html='<h2>이 스타일과 닮은 K리그 선수'+(ai?' · AI 추천':'')+'</h2>';
+  items.forEach((it,i)=>{
+    const c=it.c||{};
+    const lg=c.league==='K1'?'1부':(c.league==='K2'?'2부':'');
     const nt=c.nt?` · 국가대표 ${c.nt}`:'';
     const aw=(c.awards&&c.awards.length)?`<div class="meta" style="color:#fbbf24;">🏆 ${c.awards.slice(0,2).join(' · ')}${c.awards.length>2?` 외 ${c.awards.length-2}`:''}</div>`:'';
+    const sim=(c.sim!=null)?`<div class="sim">유사도 ${Math.round(c.sim*100)}%</div>`:'';
+    const desc=it.reason?`<div class="desc" style="color:#cbd5e1;">💬 ${it.reason}</div>`:`<div class="desc">${(c.style||'').slice(0,160)}${(c.style||'').length>160?'…':''}</div>`;
     html+=`<div class="row"><div class="top">
-      <div><span class="rank">${i+1}</span><span class="nm">${c.name}</span>
-        <div class="meta">${c.team} (${lg}) · ${c.pos}${nt}</div>${aw}</div>
-      <div class="sim">유사도 ${Math.round(c.sim*100)}%</div></div>
-      <div class="desc">${c.style.slice(0,160)}${c.style.length>160?'…':''}</div></div>`;
+      <div><span class="rank">${i+1}</span><span class="nm">${c.name||''}</span>
+        <div class="meta">${c.team||''}${lg?` (${lg})`:''}${c.pos?` · ${c.pos}`:''}${nt}</div>${aw}</div>
+      ${sim}</div>${desc}</div>`;
   });
   $('results').innerHTML=html;
-  $('go').disabled=false; $('go').textContent='닮은 선수 찾기';
+}
+
+async function claudeRerank(q, cands, key){
+  const data=cands.map(x=>({name:x.name,team:x.team,league:x.league==='K1'?'1부':'2부',pos:x.pos,국가대표:x.nt||'없음',수상:(x.awards||[]).join(', ')||'없음',플레이스타일:x.summary}));
+  const prompt=`너는 K리그 선수 추천 도우미다. 아래 "후보 목록"은 검증된 데이터다.\n[중요] 너의 기존 지식·기억은 절대 쓰지 마라 (K리그 정보는 부정확/옛 시즌일 수 있다). 오직 아래 후보 목록의 데이터만 근거로 판단하고, 목록에 없는 선수나 없는 사실을 지어내지 마라.\n\n사용자 요청: "${q}"\n\n후보 목록(JSON):\n${JSON.stringify(data)}\n\n요청에 가장 잘 맞는 선수 6명을 순위대로 골라라. 플레이스타일 적합도가 최우선, 비슷하면 1부·국가대표·수상 많은 선수를 우대하라. 각 선수마다 한국어 한 문장 추천 이유(요청의 어떤 점과 후보의 플레이스타일이 맞는지, 후보 데이터에 근거해). 반드시 JSON 배열로만: [{"name":"정확한 후보 이름","reason":"이유"}]`;
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+    headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1500,messages:[{role:'user',content:prompt}]})});
+  if(!r.ok){ throw new Error('API '+r.status); }
+  const d=await r.json();
+  let t=(d.content&&d.content[0]&&d.content[0].text||'').trim().replace(/^```(json)?/i,'').replace(/```$/,'').trim();
+  const arr=JSON.parse(t); return Array.isArray(arr)?arr:[];
 }
 </script>
 </body>
