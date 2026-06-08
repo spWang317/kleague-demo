@@ -111,8 +111,14 @@ async function run(){
   $('go').disabled=true; $('go').textContent='분석 중…';
   const out=await extractor('query: '+q,{pooling:'mean',normalize:true});
   const qv=Array.from(out.data);
-  const scored=DATA.entities.map(x=>({...x,sim:dot(qv,x.vec)}));
-  const pool=scored.sort((a,b)=>b.sim-a.sim).slice(0,18);
+  const scored=DATA.entities.map(x=>({...x,sim:dot(qv,x.vec)})).sort((a,b)=>b.sim-a.sim);
+  // 질의에 포지션 단어가 있으면 그 포지션군만 (멀티포지션은 주포지션 기준)
+  const POSQ=[['GK',['골키퍼','키퍼','수문장']],['DF',['수비수','센터백','풀백','윙백','수비']],
+              ['MF',['미드필더','미드필드','중원','볼란치']],['FW',['공격수','스트라이커','윙어','윙','포워드','최전방','측면 공격']]];
+  let qpos=null; for(const [g,kws] of POSQ){ if(kws.some(k=>q.includes(k))){ qpos=g; break; } }
+  let cand=scored.slice(0,40);
+  if(qpos){ const f=cand.filter(x=>x.posGroup===qpos); if(f.length) cand=f; }  // 비면 필터 해제
+  const pool=cand.slice(0,18);
   const key=x=>[x.league==='K1'?0:1, -(x.ntCaps||0)];   // 1부 → 국가대표 경기 많은 순
   pool.sort((a,b)=>{const ka=key(a),kb=key(b);for(let i=0;i<ka.length;i++){if(ka[i]!==kb[i])return ka[i]-kb[i];}return 0;});
   const top=pool.slice(0,8);
