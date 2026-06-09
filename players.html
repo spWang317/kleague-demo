@@ -127,7 +127,7 @@ EX.forEach(t=>{const c=document.createElement('span');c.className='chip';c.textC
 const PROXY='https://kleague-proxy.wltjdtjdvlf.workers.dev';
 
 // ===== 팀 바로가기 링크 (인스타/최근영상/일정) =====
-const IG={'강원':'gangwon_fc','경남':'gyeongnamfc','광주':'gwangju_fc','김천':'gimcheonfc','김포':'gimpofc_official','대구':'daegufc.co.kr','대전':'daejeon_hana','부산':'busaniparkfc','부천':'bucheonfc1995','서울':'fcseoul','서울E':'seouleland','성남':'sfc.seongnam','수원':'suwonsamsungfc','수원FC':'suwonfc','안산':'ansan_greeners_fc','안양':'fc_anyang','용인':'yonginfc','울산':'uhdfc_1983','인천':'incheonutd','전남':'jeonnamdragons_fc','전북':'jeonbuk1994','제주':'jejuskfc_official','천안':'cheonancityfc','충남아산':'asanfc2020','충북청주':'chfc_2023','포항':'fc.pohangsteelers','화성':'hwaseongfc_official'};
+const IG={'강원':'gangwon_fc','경남':'gyeongnamfc','광주':'gwangju_fc','김천':'gimcheonfc','김포':'gimpofc_official','김해':'gimhaefc2008','대구':'daegufc.co.kr','대전':'daejeon_hana','부산':'busaniparkfc','부천':'bucheonfc1995','서울':'fcseoul','서울E':'seouleland','성남':'sfc.seongnam','수원':'suwonsamsungfc','수원FC':'suwonfc','안산':'ansan_greeners_fc','안양':'fc_anyang','용인':'yonginfc','울산':'uhdfc_1983','인천':'incheonutd','전남':'jeonnamdragons_fc','전북':'jeonbuk1994','제주':'jejuskfc_official','천안':'cheonancityfc','충남아산':'asanfc2020','충북청주':'chfc_2023','파주':'pajufrontierfc','포항':'fc.pohangsteelers','화성':'hwaseongfc_official'};
 function igUrl(t){return IG[t]?'https://www.instagram.com/'+IG[t]:'https://search.naver.com/search.naver?query='+encodeURIComponent(t+' 인스타그램');}
 function ytUrl(t){return 'https://www.youtube.com/results?search_query='+encodeURIComponent(t+' 하이라이트');}
 function schedUrl(t){return 'https://search.naver.com/search.naver?query='+encodeURIComponent(t+' 경기일정');}
