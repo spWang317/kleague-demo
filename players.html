@@ -93,11 +93,7 @@
       <button class="go" id="go" disabled>AI 모델 불러오는 중…</button>
       <div class="status" id="status">최초 1회 모델 다운로드(약 1분). 이후엔 바로 동작합니다.</div>
     </div>
-    <details style="margin-top:10px;">
-      <summary style="color:#60a5fa;font-size:12.5px;cursor:pointer;">⚙️ AI 추천 강화 — Claude API 키 (선택)</summary>
-      <input id="akey" type="password" placeholder="sk-ant-..." autocomplete="off" style="width:100%;margin-top:8px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:9px 11px;font-size:13px;">
-      <div style="font-size:11px;color:#64748b;margin-top:5px;line-height:1.5;">키는 이 브라우저에만 저장(localStorage), 서버 안 거침. 입력하면 Claude가 <b>우리 데이터(검증된 후보)만 근거로</b> 재랭킹+추천이유 생성(외부 지식 금지=할루시네이션 차단). 없으면 임베딩 순위.</div>
-    </details>
+    <div style="font-size:11px;color:#64748b;margin-top:8px;line-height:1.5;">🤖 Claude가 <b>우리 검증 데이터만 근거로</b> 추천 이유를 작성하고, 결과의 현역 여부를 웹 검색으로 검증합니다(외부 지식 금지 = 할루시네이션 차단).</div>
     <div id="results"></div>
     <p class="foot">
       엔진: 문장 임베딩 <b>multilingual-e5</b> · 코사인 유사도 (브라우저에서 직접 실행 · 서버/키 없음)<br>
@@ -127,8 +123,8 @@ const EX=['데 브라위너처럼 시야가 넓고 패스가 좋은 미드필더
           '빠른 스피드로 측면을 돌파하는 윙어','박스 안 결정력이 좋은 스트라이커','탈압박과 드리블이 좋고 과감하게 슛하는 공격수'];
 EX.forEach(t=>{const c=document.createElement('span');c.className='chip';c.textContent=t;c.onclick=()=>{$('q').value=t;};$('chips').appendChild(c);});
 // ---- API 키 저장/불러오기 (이 브라우저 localStorage) ----
-const _ak=localStorage.getItem('anthropic_key'); if(_ak) $('akey').value=_ak;
-$('akey').addEventListener('input', e=>localStorage.setItem('anthropic_key', e.target.value.trim()));
+// AI 키는 서버(Cloudflare Worker 프록시)에 보관 — 사용자 입력 불필요
+const PROXY='https://kleague-proxy.wltjdtjdvlf.workers.dev';
 
 // ---- 모델/데이터 (스타일 화면 진입 시 1회 로드) ----
 let DATA=null, extractor=null, loading=false, lastTop=[];
@@ -171,16 +167,13 @@ async function run(){
   // 임베딩+가중 순위 top8 (순서 고정). 키 있으면 Claude가 순서 유지하며 추천이유만 작성.
   const top=pool.slice(0,8);
   lastTop=top;
-  const key=(localStorage.getItem('anthropic_key')||'').trim();
-  if(key){
-    try{
-      $('status').textContent='🤖 Claude가 추천 이유 작성 중…';
-      const reasons=await claudeExplain(q, top, key);
-      renderRows(top.map(c=>({c, reason:reasons[c.name]})), true);
-      $('status').textContent='✅ 임베딩 순위 + Claude 추천이유 (우리 데이터 기반)';
-      $('go').disabled=false; $('go').textContent='닮은 선수 찾기'; return;
-    }catch(e){ $('status').textContent='AI 이유 생성 실패('+(e.message||e)+') — 순위만 표시'; }
-  }
+  try{
+    $('status').textContent='🤖 Claude가 추천 이유 작성 중…';
+    const reasons=await claudeExplain(q, top);
+    renderRows(top.map(c=>({c, reason:reasons[c.name]})), true);
+    $('status').textContent='✅ 임베딩 순위 + Claude 추천이유 (우리 데이터 기반)';
+    $('go').disabled=false; $('go').textContent='닮은 선수 찾기'; return;
+  }catch(e){ $('status').textContent='AI 이유 생성 실패('+(e.message||e)+') — 순위만 표시'; }
   renderRows(top.map(c=>({c})), false);
   $('go').disabled=false; $('go').textContent='닮은 선수 찾기';
 }
@@ -205,12 +198,10 @@ function renderRows(items, ai){
 }
 
 async function verifyResults(){
-  const key=(localStorage.getItem('anthropic_key')||'').trim();
-  if(!key){ alert('검증엔 Claude API 키가 필요해요 (위 ⚙️ AI 추천 강화에 입력).'); return; }
   if(!lastTop.length) return;
   const vb=$('verifyBtn'); if(vb){ vb.disabled=true; vb.textContent='🔍 웹 검색으로 검증 중… (10~30초)'; }
   try{
-    const v=await claudeVerify(lastTop, key);
+    const v=await claudeVerify(lastTop);
     lastTop.forEach((c,i)=>{
       const r=v[c.name]; const el=$('vd-'+i); if(!el) return;
       if(!r){ el.innerHTML=''; return; }
@@ -221,11 +212,11 @@ async function verifyResults(){
     if(vb){ vb.disabled=false; vb.textContent='🔍 다시 검증'; }
   }catch(e){ if(vb){ vb.disabled=false; vb.textContent='검증 실패: '+(e.message||e); } }
 }
-async function claudeVerify(players, key){
+async function claudeVerify(players){
   const list=players.map(x=>`${x.name}(${x.team})`).join(', ');
   const prompt=`다음 K리그 선수들이 2026 시즌 현재 그 구단 소속 "현역 선수"가 맞는지 웹 검색으로 확인해줘: ${list}.\n각 선수마다 JSON으로만 답해(설명 문장 금지): [{"name":"정확한 이름","current":true 또는 false,"note":"근거 한 줄(현 소속/은퇴 여부 등)"}]`;
-  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-    headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+  const r=await fetch(PROXY,{method:'POST',
+    headers:{'content-type':'application/json'},
     body:JSON.stringify({model:'claude-haiku-4-5',max_tokens:2000,tools:[{type:'web_search_20260209',name:'web_search',allowed_callers:['direct']}],messages:[{role:'user',content:prompt}]})});
   if(!r.ok){ throw new Error('API '+r.status); }
   const d=await r.json();
@@ -289,11 +280,11 @@ function wcWinner(p){
   const r=$('wc-redo'); if(r) r.onclick=startWC;
 }
 
-async function claudeExplain(q, players, key){
+async function claudeExplain(q, players){
   const data=players.map(x=>({name:x.name,pos:x.pos,플레이스타일:x.summary}));
   const prompt=`사용자 요청: "${q}"\n아래는 요청에 맞춰 이미 선정·정렬된 K리그 선수들이다(JSON). 순서는 절대 바꾸지 말고, 각 선수마다 "요청의 어떤 점과 그 선수의 플레이스타일이 맞는지" 한국어 한 문장 추천 이유를 써라.\n[규칙] 오직 주어진 플레이스타일 데이터만 근거로. 외부 지식·기억이나 없는 사실(역사·성적 등)은 절대 쓰지 마라.\n\n선수들(JSON):\n${JSON.stringify(data)}\n\n반드시 JSON 배열로만, 입력과 같은 순서로: [{"name":"이름","reason":"이유"}]`;
-  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-    headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+  const r=await fetch(PROXY,{method:'POST',
+    headers:{'content-type':'application/json'},
     body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1200,messages:[{role:'user',content:prompt}]})});
   if(!r.ok){ throw new Error('API '+r.status); }
   const d=await r.json();
