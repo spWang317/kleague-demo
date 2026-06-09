@@ -137,19 +137,19 @@ async function run(){
     if(la!==lb) return la-lb;
     return b.score-a.score;
   });
-  // AI 강화: 키 있으면 Claude가 우리 후보(검증 데이터)만 근거로 재랭킹+이유. 없으면 임베딩 순위.
+  // 임베딩+가중 순위 top8 (순서 고정). 키 있으면 Claude가 순서 유지하며 추천이유만 작성.
+  const top=pool.slice(0,8);
   const key=(localStorage.getItem('anthropic_key')||'').trim();
   if(key){
     try{
-      $('status').textContent='🤖 Claude가 후보를 분석·추천 중…';
-      const picks=await claudeRerank(q, cand.slice(0,20), key);
-      const byName=Object.fromEntries(DATA.entities.map(x=>[x.name,x]));
-      renderRows(picks.slice(0,8).map(p=>({c:byName[p.name]||{name:p.name},reason:p.reason})), true);
-      $('status').textContent='✅ Claude 추천 (우리 데이터 기반 · 외부지식 미사용)';
+      $('status').textContent='🤖 Claude가 추천 이유 작성 중…';
+      const reasons=await claudeExplain(q, top, key);
+      renderRows(top.map(c=>({c, reason:reasons[c.name]})), true);
+      $('status').textContent='✅ 임베딩 순위 + Claude 추천이유 (우리 데이터 기반)';
       $('go').disabled=false; $('go').textContent='닮은 선수 찾기'; return;
-    }catch(e){ $('status').textContent='AI 강화 실패('+(e.message||e)+') — 임베딩 순위로 표시'; }
+    }catch(e){ $('status').textContent='AI 이유 생성 실패('+(e.message||e)+') — 순위만 표시'; }
   }
-  renderRows(pool.slice(0,8).map(c=>({c})), false);
+  renderRows(top.map(c=>({c})), false);
   $('go').disabled=false; $('go').textContent='닮은 선수 찾기';
 }
 
@@ -170,16 +170,16 @@ function renderRows(items, ai){
   $('results').innerHTML=html;
 }
 
-async function claudeRerank(q, cands, key){
-  const data=cands.map(x=>({name:x.name,team:x.team,league:x.league==='K1'?'1부':'2부',pos:x.pos,국가대표:x.nt||'없음',수상:(x.awards||[]).join(', ')||'없음',플레이스타일:x.summary}));
-  const prompt=`너는 K리그 선수 추천 도우미다. 아래 "후보 목록"은 검증된 데이터다.\n[중요] 너의 기존 지식·기억은 절대 쓰지 마라 (K리그 정보는 부정확/옛 시즌일 수 있다). 오직 아래 후보 목록의 데이터만 근거로 판단하고, 목록에 없는 선수나 없는 사실을 지어내지 마라.\n\n사용자 요청: "${q}"\n\n후보 목록(JSON):\n${JSON.stringify(data)}\n\n요청에 가장 잘 맞는 선수 6명을 순위대로 골라라. 플레이스타일 적합도가 최우선, 비슷하면 1부·국가대표·수상 많은 선수를 우대하라. 각 선수마다 한국어 한 문장 추천 이유(요청의 어떤 점과 후보의 플레이스타일이 맞는지, 후보 데이터에 근거해). 반드시 JSON 배열로만: [{"name":"정확한 후보 이름","reason":"이유"}]`;
+async function claudeExplain(q, players, key){
+  const data=players.map(x=>({name:x.name,pos:x.pos,플레이스타일:x.summary}));
+  const prompt=`사용자 요청: "${q}"\n아래는 요청에 맞춰 이미 선정·정렬된 K리그 선수들이다(JSON). 순서는 절대 바꾸지 말고, 각 선수마다 "요청의 어떤 점과 그 선수의 플레이스타일이 맞는지" 한국어 한 문장 추천 이유를 써라.\n[규칙] 오직 주어진 플레이스타일 데이터만 근거로. 외부 지식·기억이나 없는 사실(역사·성적 등)은 절대 쓰지 마라.\n\n선수들(JSON):\n${JSON.stringify(data)}\n\n반드시 JSON 배열로만, 입력과 같은 순서로: [{"name":"이름","reason":"이유"}]`;
   const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
     headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1500,messages:[{role:'user',content:prompt}]})});
+    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1200,messages:[{role:'user',content:prompt}]})});
   if(!r.ok){ throw new Error('API '+r.status); }
   const d=await r.json();
   let t=(d.content&&d.content[0]&&d.content[0].text||'').trim().replace(/^```(json)?/i,'').replace(/```$/,'').trim();
-  const arr=JSON.parse(t); return Array.isArray(arr)?arr:[];
+  const arr=JSON.parse(t); return Object.fromEntries((Array.isArray(arr)?arr:[]).map(p=>[p.name,p.reason]));
 }
 </script>
 </body>
