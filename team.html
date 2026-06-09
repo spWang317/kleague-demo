@@ -220,8 +220,9 @@ function renderIntro(app) {
         <label><input type="checkbox" id="aclOnly"> 최근 10년 ACL 진출 경험 있는 팀만 보기</label>
       </div>
       <div style="margin-top:16px;border-top:1px solid #334155;padding-top:14px;">
-        <div style="font-size:13px;color:#a78bfa;margin-bottom:6px;">🤖 또는 한 문장으로 — AI가 카드를 대신 채워드려요 (Claude 키 입력 시)</div>
+        <div style="font-size:13px;color:#a78bfa;margin-bottom:6px;">🤖 또는 한 문장으로 — AI가 카드를 대신 채워드려요</div>
         <input id="nlq" placeholder="예: 집에서 가깝고 응원 뜨거운 우승권 팀" style="width:100%;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:9px 11px;font-size:14px;">
+        <input id="akey" type="password" placeholder="Claude API 키 (sk-ant-...) — 한 번만 입력하면 저장됨" value="${localStorage.getItem('anthropic_key')||''}" oninput="localStorage.setItem('anthropic_key', this.value.trim())" style="width:100%;margin-top:8px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:9px 11px;font-size:13px;">
         <button onclick="aiSearch(this)" style="margin-top:8px;width:100%;background:#7c3aed;">AI로 바로 찾기 →</button>
       </div>
       <div class="nav">
@@ -425,7 +426,7 @@ async function aiSearch(btn) {
   const key=(localStorage.getItem('anthropic_key')||'').trim();
   const q=document.getElementById('nlq').value.trim();
   if(!q) return;
-  if(!key){ alert('AI 검색은 Claude API 키가 필요해요. "선수 추천 → 플레이스타일 → ⚙️ AI 추천 강화"에서 키를 한 번 입력하면 여기서도 쓰여요.'); return; }
+  if(!key){ alert('Claude API 키를 위 칸에 입력해주세요 (sk-ant-...).'); return; }
   const scope=document.querySelector('input[name="leagueScope"]:checked');
   state.filters.leagueScope=scope?scope.value:'any';
   state.filters.aclOnly=document.getElementById('aclOnly').checked;
