@@ -49,6 +49,7 @@
   <div id="app"></div>
 </div>
 
+<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=84b25321338b1968ec44ed454cb51301&libraries=services"></script>
 <script>
 // ===== Data =====
 const TEAMS_K1 = ['전북','울산','포항','FC서울','인천','대전','안양','제주','강원','광주','부천'];
@@ -59,14 +60,19 @@ const LEAGUE = Object.fromEntries([...TEAMS_K1.map(t=>[t,'K1']), ...TEAMS_K2.map
 // ACL 진출 경험 (최근 10년 1회 이상)
 const ACL = new Set(['전북','울산','포항','FC서울','수원삼성','제주','대구','강원','광주','대전','경남','인천']);
 
-// 팀 이름 → 거리 매트릭스 키 (대부분 동일, 두 개만 다름)
+// 팀 이름 → 경기장 좌표 키 (대부분 동일, 두 개만 다름)
 const MKEY = {'FC서울':'서울','수원삼성':'수원'};
 const mk = t => MKEY[t] || t;
-// 거주지 선택용 17개 광역 (매트릭스 출발지 키와 동일)
-const REGIONS = ['서울','경기','인천','강원','대전','세종','충남','충북','전북','광주','전남','대구','경북','부산','울산','경남','제주'];
-
-let DIST = null;  // distance_matrix.json (오프라인 사전계산: 자차=카카오, 대중교통=ODsay)
-fetch('data/distance_matrix.json').then(r=>r.json()).then(d=>{ DIST=d; if(state.step>=AXES.length+1) render(); }).catch(()=>{});
+// 29개 경기장 좌표 [경도(x), 위도(y)]
+const STAD_XY = {
+ '서울':[126.897248,37.568302],'울산':[129.259495,35.535263],'전북':[127.064551,35.868209],'강원':[128.897571,37.773591],
+ '포항':[129.384461,35.99765],'인천':[126.643085,37.466113],'안양':[126.946974,37.405484],'제주':[126.509107,33.246269],
+ '부천':[126.797461,37.505836],'대전':[127.325107,36.365253],'김천':[128.087467,36.141504],'광주':[126.8749,35.130921],
+ '부산':[129.059978,35.18817],'수원':[127.036805,37.286408],'서울E':[126.875205,37.532216],'대구':[128.587989,35.881295],
+ '화성':[126.924715,37.137282],'김포':[126.649398,37.6409],'수원FC':[127.01,37.298381],'충남아산':[127.021631,36.768201],
+ '천안':[127.112782,36.817261],'성남':[127.121215,37.410105],'경남':[128.706559,35.222702],'파주':[126.786478,37.756124],
+ '용인':[127.165339,37.249559],'충북청주':[127.471052,36.635409],'안산':[126.818486,37.31774],'전남':[127.727428,34.933059],'김해':[128.875366,35.257668],
+};
 
 const SCORES = {
   trophy: {전북:5,성남:5,포항:5,FC서울:4,수원삼성:4,울산:4,부산:3,광주:2,대구:2,대전:2,전남:2,제주:2,
@@ -118,17 +124,57 @@ const TOTAL = AXES.length + 1;  // 거리 카드 + 9개 취향 카드
 const state = {
   step: -1, // -1=intro, 0=거리카드, 1..AXES.length=취향카드, AXES.length+1=결과
   filters: { leagueScope: 'any', aclOnly: false },
-  dist: { region:'', mode:'car', pref:'', limit:60 },
+  dist: { addr:'', x:null, y:null, mode:'car', pref:'', limit:60, live:{}, loading:false, err:'' },
   prefs: {},
 };
 
 // ===== Distance =====
 function distMins(team) {
-  if (!state.dist.region || !DIST) return null;
-  const cell = (DIST[state.dist.region] || {})[mk(team)];
-  if (!cell) return null;
-  const m = state.dist.mode === 'transit' ? cell.transit : cell.car;
+  const m = state.dist.live[team];
   return (m == null) ? null : m;
+}
+// 주소 → 좌표 (카카오 지오코더, 클라이언트)
+function geocodeAddr() {
+  const el = document.getElementById('daddr');
+  const addr = el && el.value && el.value.trim();
+  if (!addr) return;
+  if (!(window.kakao && kakao.maps && kakao.maps.services)) { state.dist.err='지도 서비스 로딩 중이에요. 잠시 후 다시.'; render(); return; }
+  state.dist.err=''; state.dist.loading=true; state.dist.addr=addr; render();
+  const gc = new kakao.maps.services.Geocoder();
+  gc.addressSearch(addr, (res, status) => {
+    if (status === kakao.maps.services.Status.OK && res[0]) {
+      state.dist.addr = (res[0].road_address && res[0].road_address.address_name) || res[0].address_name || addr;
+      state.dist.x = +res[0].x; state.dist.y = +res[0].y;   // x=경도, y=위도
+      fetchDist();
+    } else {
+      state.dist.loading=false; state.dist.x=null; state.dist.live={};
+      state.dist.err='주소를 찾지 못했어요. 도로명/지번 주소를 정확히 입력해 주세요.'; render();
+    }
+  });
+}
+// 직선거리(km) — 1차 컷용 (무료·즉시)
+function haversineKm(lat1,lon1,lat2,lon2){const R=6371,toR=d=>d*Math.PI/180;const dLat=toR(lat2-lat1),dLon=toR(lon2-lon1);const a=Math.sin(dLat/2)**2+Math.cos(toR(lat1))*Math.cos(toR(lat2))*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(a));}
+// 좌표 → 경기장 실시간 소요시간(고른 모드, 자차=카카오 / 대중교통=ODsay) → state.dist.live
+//   ※ 1차로 직선거리가 명백히 먼 팀(예: 서울→부산)은 실제 길찾기를 건너뛰어 자동 후순위 + 호출 절약
+async function fetchDist() {
+  if (state.dist.x == null || !state.dist.pref || state.dist.pref === 'neutral') { state.dist.loading=false; render(); return; }
+  state.dist.loading=true; state.dist.err=''; render();
+  const ox=state.dist.x, oy=state.dist.y, mode=state.dist.mode;
+  const all = TEAMS.map(t => { const c=STAD_XY[mk(t)]; return c?{team:t,x:c[0],y:c[1],km:haversineKm(oy,ox,c[1],c[0])}:null; }).filter(Boolean);
+  all.sort((a,b)=>a.km-b.km);
+  const lim = state.dist.pref==='required' ? state.dist.limit : 0;
+  // 도달 가능 직선반경(넉넉히): 자차 ~분당 1.6km / 대중교통 ~분당 0.9km. 필수면 한도기준, 선호면 권역(자차180·대중90km)
+  const cutKm = lim ? (mode==='car'? lim*1.6 : lim*0.9) : (mode==='car'? 180 : 90);
+  const near = all.filter((d,i)=> d.km<=cutKm || i<6).slice(0,18);   // 반경 안 + 항상 최근접 6, 최대 18팀만 실제 호출
+  const dests = near.map(d=>({team:d.team,x:d.x,y:d.y}));
+  try {
+    const r = await fetch(PROXY, { method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ type:'dist', mode, origin:{x:ox,y:oy}, dests }) });
+    const j = await r.json();
+    state.dist.live = (j && j.times) || {};   // 컷에서 빠진 먼 팀은 live에 없음 → distMins null → 후순위/제외
+    if (!Object.values(state.dist.live).some(v => v != null)) state.dist.err='경로를 계산하지 못했어요(키/한도 확인).';
+  } catch(e) { state.dist.err='거리 계산 실패('+(e.message||e)+')'; }
+  state.dist.loading=false; render();
 }
 // 거리 점수(선호)는 calcMatch에서 상대 인버스(5 × 최단시간/해당시간)로 계산
 
@@ -144,14 +190,14 @@ function candidates() {
   distFallback = false;
   let list = TEAMS.filter(t => {
     if (!passesFilters(t)) return false;
-    if (state.dist.region && state.dist.pref === 'required') {   // 거리 필수조건 = 하드 필터
+    if (state.dist.x != null && state.dist.pref === 'required') {   // 거리 필수조건 = 하드 필터
       const m = distMins(t);
       if (m == null || m > state.dist.limit) return false;
     }
     return true;
   });
   // 거리 필수인데 한 팀도 없으면 → 가장 가까운 팀 1개 자동 배정
-  if (list.length === 0 && state.dist.region && state.dist.pref === 'required') {
+  if (list.length === 0 && state.dist.x != null && state.dist.pref === 'required') {
     const base = TEAMS.filter(t => passesFilters(t) && distMins(t) != null)
                       .sort((a, b) => distMins(a) - distMins(b));
     if (base.length) { list = [base[0]]; distFallback = true; }
@@ -167,7 +213,7 @@ function calcMatch() {
 
   // 거리 점수(선호): 후보 중 가장 가까운 팀 = 5점, 나머지는 5 × (최단시간 / 해당팀시간)
   let tmin = null;
-  if (state.dist.region && state.dist.pref === 'preferred') {
+  if (state.dist.x != null && state.dist.pref === 'preferred') {
     const ms = cands.map(t => distMins(t)).filter(x => x != null);
     if (ms.length) tmin = Math.min(...ms);
   }
@@ -239,17 +285,23 @@ function renderDistCard(app) {
     {k:'preferred', label:'가까울수록 좋아요 (점수)', desc:'가까운 팀일수록 점수 가산'},
     {k:'neutral',   label:'거리는 상관없어요',        desc:'거리 무시'},
   ];
-  const nextDisabled = d.region && !d.pref;   // 지역 골랐으면 조건도 선택해야
+  const nextDisabled = (d.x != null) && !d.pref;   // 주소 넣었으면 조건도 선택해야
   app.innerHTML = `
     <div class="progress"><div class="progress-bar" style="width:${100/TOTAL}%"></div></div>
     <div class="card">
       <h2>카드 1 / ${TOTAL} — 경기장 접근성</h2>
-      <p class="q">직관 가려면 가까워야죠. 어디 사세요?</p>
-      <select id="dregion" onchange="setDistRegion(this.value)">
-        <option value="">— 지역 선택 (또는 거리 신경 안 써요) —</option>
-        ${REGIONS.map(r=>`<option value="${r}" ${d.region===r?'selected':''}>${r}</option>`).join('')}
-      </select>
-      <div style="margin-top:18px;${d.region?'':'opacity:.35;pointer-events:none;'}">
+      <p class="q">직관 가려면 가까워야죠. 사시는 곳 주소를 알려주세요.</p>
+      <div style="display:flex;gap:8px;">
+        <input id="daddr" placeholder="예: 서울 강남구 테헤란로 152 (도로명/지번)" value="${d.addr||''}"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();geocodeAddr();}"
+          style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:10px 12px;font-size:14px;">
+        <button onclick="geocodeAddr()" style="white-space:nowrap;">📍 확인</button>
+      </div>
+      ${d.loading?`<div style="color:#60a5fa;font-size:13px;margin-top:8px;">📍 실제 소요시간 계산 중…</div>`
+        : d.err?`<div style="color:#fbbf24;font-size:13px;margin-top:8px;">${d.err}</div>`
+        : d.x!=null?`<div style="color:#4ade80;font-size:13px;margin-top:8px;">✓ ${d.addr} — 여기서부터 실제 소요시간을 계산해요</div>`
+        : `<div style="color:#64748b;font-size:12.5px;margin-top:8px;">주소를 넣으면 자차/대중교통 <b>실제 소요시간</b>으로 매칭해요. 거리 신경 안 쓰면 그냥 다음 →</div>`}
+      <div style="margin-top:18px;${d.x!=null?'':'opacity:.35;pointer-events:none;'}">
         <div style="font-size:13px;color:#94a3b8;margin-bottom:6px;">이동수단</div>
         <div class="options" style="flex-direction:row;">
           <div class="opt ${d.mode==='car'?'selected':''}" style="flex:1;text-align:center;" onclick="setDistMode('car')">🚗 자차</div>
@@ -308,7 +360,7 @@ function renderCard(app, i) {
 }
 
 function renderResults(app) {
-  if (state.dist.region && !DIST) { app.innerHTML = '<div class="empty-result">거리 데이터 불러오는 중…</div>'; return; }
+  if (state.dist.loading) { app.innerHTML = '<div class="empty-result">📍 실제 소요시간 계산 중… (자차=카카오 / 대중교통=ODsay)</div>'; return; }
   const results = calcMatch();
   const required = AXES.filter(a => state.prefs[a.key] === 'required');
   const reqCount = required.length;
@@ -321,11 +373,11 @@ function renderResults(app) {
     <span></span>
   </div>
   <h2 style="margin-bottom:16px;">매칭 결과</h2>`;
-  if (state.dist.region && state.dist.pref === 'required') {
+  if (state.dist.x != null && state.dist.pref === 'required') {
     if (distFallback) {
       html += `<p class="sub" style="color:#fbbf24;margin-bottom:14px;">⚠️ ${state.dist.mode==='transit'?'대중교통':'자차'} ${state.dist.limit}분 이내인 팀이 없어, 가장 가까운 팀을 보여드려요.</p>`;
     } else {
-      html += `<p class="sub" style="margin-bottom:14px;">📍 ${state.dist.region} 기준 · ${state.dist.mode==='transit'?'대중교통':'자차'} ${state.dist.limit}분 이내만</p>`;
+      html += `<p class="sub" style="margin-bottom:14px;">📍 ${state.dist.addr} 기준 · ${state.dist.mode==='transit'?'대중교통':'자차'} ${state.dist.limit}분 이내만</p>`;
     }
   }
   if (results.length === 0) {
@@ -334,7 +386,7 @@ function renderResults(app) {
   }
   if (reqCount === 0) {
     html += `<div class="result-group">
-      <h3>점수 순위${state.dist.region?' (거리 가산 포함)':''}</h3>
+      <h3>점수 순위${state.dist.x!=null?' (거리 가산 포함)':''}</h3>
       ${results.slice(0,8).map(r => teamCardHtml(r)).join('')}
     </div>`;
   } else {
@@ -360,7 +412,7 @@ function renderResults(app) {
 
 function teamCardHtml(r) {
   const meta = [];
-  if (state.dist.region) {
+  if (state.dist.x != null) {
     const m = distMins(r.team);
     if (m != null) {
       const ic = state.dist.mode === 'transit' ? '🚇' : '🚗';
@@ -386,20 +438,19 @@ function startCards() {
   state.step = 0;
   render();
 }
-function setDistRegion(v) { state.dist.region = v; if(!v) state.dist.pref=''; render(); }
-function setDistMode(m) { state.dist.mode = m; render(); }
-function selectDistPref(k) { state.dist.pref = k; render(); }
+function setDistMode(m) { state.dist.mode = m; if(state.dist.x!=null && state.dist.pref && state.dist.pref!=='neutral') fetchDist(); else render(); }
+function selectDistPref(k) { state.dist.pref = k; if(state.dist.x!=null && k!=='neutral') fetchDist(); else render(); }
 function setDistLimit(n) { state.dist.limit = +n; render(); }
 function selectOpt(axisKey, opt) { state.prefs[axisKey] = opt; render(); }
 function next() { state.step++; render(); }
 function prev() { state.step--; render(); }
-function restart() { state.step = -1; state.prefs = {}; state.dist = { region:'', mode:'car', pref:'', limit:60 }; render(); }
+function restart() { state.step = -1; state.prefs = {}; state.dist = { addr:'', x:null, y:null, mode:'car', pref:'', limit:60, live:{}, loading:false, err:'' }; render(); }
 
 // ===== AI 에이전트 (Claude, 키는 localStorage 공유) =====
 const PROXY='https://kleague-proxy.wltjdtjdvlf.workers.dev';  // 키는 서버 프록시에 보관
 
 // ===== 팀 바로가기 링크 (인스타/최근영상/일정) =====
-const IG={'강원':'gangwon_fc','경남':'gyeongnamfc','광주':'gwangju_fc','김천':'gimcheonfc','김포':'gimpofc_official','김해':'gimhaefc2008','대구':'daegufc.co.kr','대전':'daejeon_hana','부산':'busaniparkfc','부천':'bucheonfc1995','서울':'fcseoul','서울E':'seouleland','성남':'sfc.seongnam','수원':'suwonsamsungfc','수원FC':'suwonfc','안산':'ansan_greeners_fc','안양':'fc_anyang','용인':'yonginfc','울산':'uhdfc_1983','인천':'incheonutd','전남':'jeonnamdragons_fc','전북':'jeonbuk1994','제주':'jejuskfc_official','천안':'cheonancityfc','충남아산':'asanfc2020','충북청주':'chfc_2023','파주':'pajufrontierfc','포항':'fc.pohangsteelers','화성':'hwaseongfc_official'};
+const IG={'강원':'gangwon_fc','경남':'gyeongnamfc','광주':'gwangju_fc','김천':'gimcheonfc','김포':'gimpofc_official','김해':'gimhaefc2008','대구':'daegufc.co.kr','대전':'daejeon_hana','부산':'busaniparkfc','부천':'bucheonfc1995','FC서울':'fcseoul','서울E':'seouleland','성남':'sfc.seongnam','수원삼성':'suwonsamsungfc','수원FC':'suwonfc','안산':'ansan_greeners_fc','안양':'fc_anyang','용인':'yonginfc','울산':'uhdfc_1983','인천':'incheonutd','전남':'jeonnamdragons_fc','전북':'jeonbuk1994','제주':'jejuskfc_official','천안':'cheonancityfc','충남아산':'asanfc2020','충북청주':'chfc_2023','파주':'pajufrontierfc','포항':'fc.pohangsteelers','화성':'hwaseongfc_official'};
 function igUrl(t){return IG[t]?'https://www.instagram.com/'+IG[t]:'https://search.naver.com/search.naver?query='+encodeURIComponent(t+' 인스타그램');}
 function ytUrl(t){return 'https://www.youtube.com/results?search_query='+encodeURIComponent(t+' 하이라이트');}
 function schedUrl(t){return 'https://search.naver.com/search.naver?query='+encodeURIComponent(t+' 경기일정');}
@@ -421,7 +472,7 @@ async function whyThisTeam(results) {
   const reqN=AXES.filter(a=>state.prefs[a.key]==='required').map(a=>a.name);
   const prefN=AXES.filter(a=>state.prefs[a.key]==='preferred').map(a=>a.name);
   const prof=AXES.filter(a=>['required','preferred'].includes(state.prefs[a.key])).map(a=>`${a.name} ${SCORES[a.key][top.team]}/5`);
-  const dist=state.dist.region&&distMins(top.team)!=null ? `거주지에서 ${state.dist.mode==='transit'?'대중교통':'자차'} ${distMins(top.team)}분` : '';
+  const dist=state.dist.x!=null&&distMins(top.team)!=null ? `거주지에서 ${state.dist.mode==='transit'?'대중교통':'자차'} ${distMins(top.team)}분` : '';
   const box=document.getElementById('whybox');
   box.innerHTML='<div class="result-group" style="border-color:#7c3aed;"><h3 style="color:#a78bfa;">🤖 왜 이 팀일까요?</h3><div class="empty-result">AI 분석 중…</div></div>';
   const prompt=`사용자가 K리그 입덕할 팀을 찾는다. 추천 1위: "${top.team}".\n사용자가 중시한 기준 — 필수: [${reqN.join(', ')||'없음'}], 선호: [${prefN.join(', ')||'없음'}].\n${top.team}의 해당 기준 점수(5점 만점): ${prof.join(', ')||'정보 없음'}. ${dist?dist+'.':''}\n[규칙] 위에 주어진 점수·거리·사용자 선호만 근거로, 이 팀을 왜 추천하는지 2~3문장으로 따뜻하게 설득하라. 팀의 역사·선수·성적 등 주어지지 않은 사실은 절대 지어내지 마라. 한국어 평어체로.`;
