@@ -263,7 +263,7 @@ function wcShow(){
 function wcPick(p){ wcWin.push(p); wcIdx+=2; wcShow(); }
 function wcCard(p){
   const img=WC_IMG+encodeURIComponent(p.n)+'.jpg';
-  return `<div class="wc-card"><div class="wc-photo"><span class="wc-ph">${p.n}</span>`
+  return `<div class="wc-card"><div class="wc-photo">`
     +`<img src="${img}" alt="${p.n}" onerror="this.style.display='none'">`
     +`<div class="wc-info"><div class="tm">${p.team||'소속팀 미정'}</div>`
     +`<div class="it"><b>키</b>${p.h||'—'}</div><div class="it"><b>몸무게</b>${p.w||'—'}</div><div class="it"><b>나이</b>${p.age||'—'}</div></div>`
