@@ -226,7 +226,7 @@ async function claudeVerify(players, key){
   const prompt=`다음 K리그 선수들이 2026 시즌 현재 그 구단 소속 "현역 선수"가 맞는지 웹 검색으로 확인해줘: ${list}.\n각 선수마다 JSON으로만 답해(설명 문장 금지): [{"name":"정확한 이름","current":true 또는 false,"note":"근거 한 줄(현 소속/은퇴 여부 등)"}]`;
   const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
     headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-haiku-4-5',max_tokens:2000,tools:[{type:'web_search_20260209',name:'web_search'}],messages:[{role:'user',content:prompt}]})});
+    body:JSON.stringify({model:'claude-haiku-4-5',max_tokens:2000,tools:[{type:'web_search_20260209',name:'web_search',allowed_callers:['direct']}],messages:[{role:'user',content:prompt}]})});
   if(!r.ok){ throw new Error('API '+r.status); }
   const d=await r.json();
   const text=(d.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
