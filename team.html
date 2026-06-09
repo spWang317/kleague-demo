@@ -50,7 +50,6 @@
 </div>
 
 <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=84b25321338b1968ec44ed454cb51301&libraries=services"></script>
-<script src="//t1.daumcdn.net/mapjsdsdk/postcode/prod/postcode.v2.js"></script>
 <script>
 // ===== Data =====
 const TEAMS_K1 = ['전북','울산','포항','FC서울','인천','대전','안양','제주','강원','광주','부천'];
@@ -134,14 +133,30 @@ function distMins(team) {
   const m = state.dist.live[team];
   return (m == null) ? null : m;
 }
-// 우편번호 검색 팝업(다음, 무료·무키) → 도로명주소 선택 → 지오코딩
-function openPostcode() {
-  if (!(window.daum && daum.Postcode)) { state.dist.err='주소 검색 로딩 중이에요. 잠시 후 다시.'; render(); return; }
-  new daum.Postcode({ oncomplete: function (data) {
-    const a = data.roadAddress || data.jibunAddress || data.address;
-    const el = document.getElementById('daddr'); if (el) el.value = a;
-    state.dist.addr = a; geocodeAddr();
-  }}).open();
+// 주소·장소 자동완성 (카카오 Places — 이미 로드된 SDK 사용, 외부 CDN 불필요)
+let _sug = [], _sugT = null;
+function addrSuggest() {
+  const el = document.getElementById('daddr'); const q = el ? el.value.trim() : '';
+  const box = document.getElementById('addr-suggest'); if (!box) return;
+  if (q.length < 2 || !(window.kakao && kakao.maps && kakao.maps.services)) { box.innerHTML = ''; return; }
+  clearTimeout(_sugT);
+  _sugT = setTimeout(function () {
+    new kakao.maps.services.Places().keywordSearch(q, function (data, status) {
+      const b = document.getElementById('addr-suggest'); if (!b) return;
+      if (status !== kakao.maps.services.Status.OK || !data.length) { b.innerHTML = ''; return; }
+      _sug = [];
+      b.innerHTML = data.slice(0, 6).map(function (p, i) {
+        _sug[i] = { x: +p.x, y: +p.y, a: p.road_address_name || p.address_name || p.place_name };
+        const sub = p.road_address_name || p.address_name || '';
+        return '<div onclick="pickAddr(' + i + ')" onmouseover="this.style.background=\'#1e293b\'" onmouseout="this.style.background=\'transparent\'" style="padding:9px 12px;cursor:pointer;border-top:1px solid #1e293b;font-size:13px;line-height:1.4;"><b style="color:#e2e8f0;">' + p.place_name + '</b><br><span style="color:#94a3b8;font-size:12px;">' + sub + '</span></div>';
+      }).join('');
+    });
+  }, 250);
+}
+function pickAddr(i) {
+  const s = _sug[i]; if (!s) return;
+  state.dist.addr = s.a; state.dist.x = s.x; state.dist.y = s.y; state.dist.err = '';
+  fetchDist();
 }
 // 주소 → 좌표 (카카오 지오코더, 클라이언트)
 function geocodeAddr() {
@@ -302,12 +317,15 @@ function renderDistCard(app) {
     <div class="card">
       <h2>카드 1 / ${TOTAL} — 경기장 접근성</h2>
       <p class="q">직관 가려면 가까워야죠. 사시는 곳 주소를 알려주세요.</p>
-      <div style="display:flex;gap:8px;">
-        <input id="daddr" placeholder="주소 검색을 누르거나 직접 입력" value="${d.addr||''}"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();geocodeAddr();}"
-          style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:10px 12px;font-size:14px;">
-        <button onclick="openPostcode()" style="white-space:nowrap;">🔍 주소 검색</button>
-        <button onclick="geocodeAddr()" class="secondary" style="white-space:nowrap;">확인</button>
+      <div style="position:relative;">
+        <div style="display:flex;gap:8px;">
+          <input id="daddr" placeholder="주소·건물명 입력 → 목록에서 선택 (예: 테헤란로 152, 강남역)" value="${d.addr||''}"
+            autocomplete="off" oninput="addrSuggest()"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();geocodeAddr();}"
+            style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:10px 12px;font-size:14px;">
+          <button onclick="geocodeAddr()" style="white-space:nowrap;">📍 확인</button>
+        </div>
+        <div id="addr-suggest" style="position:absolute;left:0;right:74px;top:100%;z-index:30;background:#0f172a;border:1px solid #334155;border-top:none;border-radius:0 0 8px 8px;max-height:240px;overflow:auto;"></div>
       </div>
       ${d.loading?`<div style="color:#60a5fa;font-size:13px;margin-top:8px;">📍 실제 소요시간 계산 중…</div>`
         : d.err?`<div style="color:#fbbf24;font-size:13px;margin-top:8px;">${d.err}</div>`
