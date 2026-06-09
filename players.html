@@ -282,7 +282,9 @@ function wcWinner(p){
   $('wc-round').textContent='🏆 최애'; $('wc-prog').textContent=''; $('wc-barfill').style.width='100%';
   const m=DATA?DATA.entities.find(x=>x.name===p.n):null;
   const extra=m&&m.summary?`<div class="desc" style="max-width:320px;margin:10px auto;color:#94a3b8;">${m.summary}</div>`:'';
+  const team=(m&&m.team)||p.team;
   $('wc-stage').innerHTML=`<div class="wc-champ">최종 선택: ${p.n}</div><div style="display:flex;justify-content:center;">${wcCard(p)}</div>${extra}`
+    +(team?`<div style="max-width:380px;margin:8px auto 0;display:flex;justify-content:center;">${teamLinksHtml(team)}</div>`:'')
     +`<button class="go" id="wc-redo" style="max-width:240px;margin:16px auto 0;">🔄 다시 하기</button>`;
   const r=$('wc-redo'); if(r) r.onclick=startWC;
 }
