@@ -235,13 +235,13 @@ async function claudeVerify(players, key){
 // ===== 이상형 월드컵 (비주얼) =====
 const WC_IMG='img/';   // ← 사진 폴더 경로/확장자, 나중에 여기만 바꾸면 됨 (이름.jpg)
 const WC_PLAYERS=[
-  {n:'이준재',team:'',h:'',w:'',age:''}, {n:'정승원',team:'FC서울',h:'',w:'',age:''},
-  {n:'천성훈',team:'FC서울',h:'',w:'',age:''}, {n:'강희수',team:'',h:'',w:'',age:''},
-  {n:'최석현',team:'',h:'',w:'',age:''}, {n:'카즈',team:'',h:'',w:'',age:''},
-  {n:'유제호',team:'FC서울',h:'',w:'',age:''}, {n:'황재원',team:'대구',h:'',w:'',age:''},
-  {n:'기성용',team:'FC서울',h:'',w:'',age:''}, {n:'이승우',team:'전북',h:'',w:'',age:''},
-  {n:'신상은',team:'제주',h:'',w:'',age:''}, {n:'신진호',team:'',h:'',w:'',age:''},
-  {n:'이상민',team:'수원 삼성',h:'',w:'',age:''}, {n:'유선',team:'',h:'',w:'',age:''},
+  {n:'이준재',team:'',h:'180cm',w:'67kg',age:'23세'}, {n:'정승원',team:'FC서울',h:'173cm',w:'68kg',age:'29세'},
+  {n:'천성훈',team:'FC서울',h:'191cm',w:'84kg',age:'26세'}, {n:'강희수',team:'',h:'176cm',w:'67kg',age:'23세'},
+  {n:'최석현',team:'',h:'181cm',w:'76kg',age:'23세'}, {n:'카즈',team:'',h:'176cm',w:'72kg',age:'26세'},
+  {n:'유제호',team:'FC서울',h:'174cm',w:'71kg',age:'34세'}, {n:'황재원',team:'대구',h:'',w:'',age:''},
+  {n:'기성용',team:'FC서울',h:'189cm',w:'77kg',age:'37세'}, {n:'이승우',team:'전북',h:'168cm',w:'64kg',age:'28세'},
+  {n:'신상은',team:'제주',h:'183cm',w:'72kg',age:'27세'}, {n:'신진호',team:'',h:'177cm',w:'72kg',age:'38세'},
+  {n:'이상민',team:'수원 삼성',h:'175cm',w:'73kg',age:'22세'}, {n:'유선',team:'',h:'187cm',w:'75kg',age:'22세'},
 ];
 function wcShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor((window.crypto?crypto.getRandomValues(new Uint32Array(1))[0]/4294967296:Math.random())*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 function wcPow2(n){ let p=1; while(p<n)p*=2; return p; }
