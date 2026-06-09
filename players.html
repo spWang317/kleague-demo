@@ -35,6 +35,25 @@
   .rank{color:#3b82f6;font-weight:800;margin-right:7px;}
   .foot{color:#64748b;font-size:12px;margin-top:22px;line-height:1.6;}
   .soon{text-align:center;color:#94a3b8;line-height:1.7;padding:14px;}
+  /* 이상형 월드컵 (비주얼) */
+  .wc-round{color:#a78bfa;font-weight:700;font-size:18px;margin-top:6px;}
+  .wc-prog{color:#94a3b8;font-size:13px;margin-bottom:12px;}
+  .wc-bar{height:4px;background:#334155;border-radius:2px;overflow:hidden;margin:8px auto 16px;max-width:380px;}
+  .wc-bar>div{height:100%;background:#7c3aed;transition:width .3s;}
+  .wc-match{display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;}
+  .wc-vs{font-size:20px;font-weight:800;color:#f59e0b;}
+  .wc-card{position:relative;width:300px;max-width:42vw;border-radius:14px;overflow:hidden;cursor:pointer;border:2px solid #334155;background:#1e293b;transition:transform .15s,border-color .15s;}
+  .wc-card:hover{transform:translateY(-4px);border-color:#7c3aed;}
+  .wc-photo{width:100%;height:360px;background:linear-gradient(135deg,#334155,#1e293b);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;}
+  .wc-photo img{width:100%;height:100%;object-fit:cover;display:block;transition:filter .25s,transform .25s;}
+  .wc-ph{position:absolute;font-size:28px;font-weight:800;color:#64748b;}
+  .wc-nm{padding:11px;font-size:18px;font-weight:700;}
+  .wc-info{position:absolute;inset:0;background:rgba(15,23,42,.8);opacity:0;transition:opacity .25s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;}
+  .wc-card:hover .wc-photo img{filter:blur(5px) brightness(.5);transform:scale(1.05);}
+  .wc-card:hover .wc-info{opacity:1;}
+  .wc-info .it{font-size:15px;} .wc-info .it b{color:#a78bfa;margin-right:6px;}
+  .wc-info .tm{font-size:17px;font-weight:800;color:#60a5fa;margin-bottom:3px;}
+  .wc-champ{font-size:20px;color:#f59e0b;font-weight:800;margin:14px 0;}
 </style>
 </head>
 <body>
@@ -51,10 +70,17 @@
     </div>
   </div>
 
-  <!-- 비주얼 (준비중) -->
+  <!-- 비주얼 = 이상형 월드컵 -->
   <div id="v-visual" class="hidden">
     <a class="back2" data-v="choose">← 뒤로</a>
-    <div class="card soon" style="margin-top:14px;">📸 <b>준비 중</b><br>선수 사진을 한 장씩 넘겨보며(스와이프) 마음에 드는 선수를 고르면<br>그 선수의 소속팀·정보를 보여주는 기능을 준비하고 있어요.</div>
+    <div style="text-align:center;margin-top:12px;">
+      <p class="sub">📸 끌리는 선수를 골라 토너먼트로 최애를 찾아요 (이상형 월드컵 · 16강)</p>
+      <div class="wc-round" id="wc-round"></div>
+      <div class="wc-prog" id="wc-prog"></div>
+      <div class="wc-bar"><div id="wc-barfill" style="width:0"></div></div>
+      <div id="wc-stage"></div>
+      <p class="foot" style="margin-top:14px;">사진에 마우스를 올리면 소속팀·키·몸무게·나이가 나와요. (사진은 곧 추가)</p>
+    </div>
   </div>
 
   <!-- 스타일 (임베딩) -->
@@ -88,6 +114,7 @@ const $=id=>document.getElementById(id);
 function show(v){
   ['choose','visual','style'].forEach(x=>$('v-'+x).classList.toggle('hidden', x!==v));
   if(v==='style') ensureLoaded();
+  if(v==='visual') startWC();
 }
 document.querySelectorAll('[data-v]').forEach(b=>b.addEventListener('click',()=>show(b.dataset.v)));
 
@@ -203,6 +230,59 @@ async function claudeVerify(players, key){
   if(a<0||z<0) throw new Error('응답 파싱 실패');
   const arr=JSON.parse(text.slice(a,z+1));
   return Object.fromEntries((Array.isArray(arr)?arr:[]).map(x=>[x.name,x]));
+}
+
+// ===== 이상형 월드컵 (비주얼) =====
+const WC_IMG='img/';   // ← 사진 폴더 경로/확장자, 나중에 여기만 바꾸면 됨 (이름.jpg)
+const WC_PLAYERS=[
+  {n:'이준재',team:'',h:'',w:'',age:''}, {n:'정승원',team:'FC서울',h:'',w:'',age:''},
+  {n:'천성훈',team:'FC서울',h:'',w:'',age:''}, {n:'강희수',team:'',h:'',w:'',age:''},
+  {n:'최석현',team:'',h:'',w:'',age:''}, {n:'카즈',team:'',h:'',w:'',age:''},
+  {n:'유제호',team:'FC서울',h:'',w:'',age:''}, {n:'황재원',team:'대구',h:'',w:'',age:''},
+  {n:'기성용',team:'FC서울',h:'',w:'',age:''}, {n:'이승우',team:'전북',h:'',w:'',age:''},
+  {n:'신상은',team:'제주',h:'',w:'',age:''}, {n:'신진호',team:'',h:'',w:'',age:''},
+  {n:'이상민',team:'수원 삼성',h:'',w:'',age:''}, {n:'유선',team:'',h:'',w:'',age:''},
+];
+function wcShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor((window.crypto?crypto.getRandomValues(new Uint32Array(1))[0]/4294967296:Math.random())*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function wcPow2(n){ let p=1; while(p<n)p*=2; return p; }
+let wcCur, wcIdx, wcWin, wcRoundNo, wcTotal;
+function startWC(){
+  if(DATA){ const by=Object.fromEntries(DATA.entities.map(x=>[x.name,x])); WC_PLAYERS.forEach(p=>{ const m=by[p.n]; if(m&&!p.team) p.team=m.team; }); }
+  const slots=wcShuffle(WC_PLAYERS.slice()); const size=wcPow2(slots.length);
+  while(slots.length<size) slots.push(null); wcShuffle(slots);
+  wcCur=slots; wcTotal=Math.log2(size); wcRoundNo=0; wcNext();
+}
+function wcRoundName(c){ return ({16:'16강',8:'8강',4:'4강',2:'결승'})[c]||(c+'강'); }
+function wcNext(){ wcWin=[]; wcIdx=0; wcRoundNo++; wcShow(); }
+function wcShow(){
+  while(wcIdx<wcCur.length){ const a=wcCur[wcIdx],b=wcCur[wcIdx+1];
+    if(a&&!b){wcWin.push(a);wcIdx+=2;continue;} if(!a&&b){wcWin.push(b);wcIdx+=2;continue;} if(!a&&!b){wcIdx+=2;continue;} break; }
+  if(wcIdx>=wcCur.length){ if(wcWin.length===1) return wcWinner(wcWin[0]); wcCur=wcWin; return wcNext(); }
+  wcRender(wcCur[wcIdx], wcCur[wcIdx+1]);
+}
+function wcPick(p){ wcWin.push(p); wcIdx+=2; wcShow(); }
+function wcCard(p){
+  const img=WC_IMG+encodeURIComponent(p.n)+'.jpg';
+  return `<div class="wc-card"><div class="wc-photo"><span class="wc-ph">${p.n}</span>`
+    +`<img src="${img}" alt="${p.n}" onerror="this.style.display='none'">`
+    +`<div class="wc-info"><div class="tm">${p.team||'소속팀 미정'}</div>`
+    +`<div class="it"><b>키</b>${p.h||'—'}</div><div class="it"><b>몸무게</b>${p.w||'—'}</div><div class="it"><b>나이</b>${p.age||'—'}</div></div>`
+    +`</div><div class="wc-nm">${p.n}</div></div>`;
+}
+function wcRender(a,b){
+  $('wc-round').textContent=wcRoundName(wcCur.length);
+  $('wc-prog').textContent=`${a.n} vs ${b.n}`;
+  $('wc-barfill').style.width=(wcRoundNo/wcTotal*100)+'%';
+  const s=$('wc-stage'); s.innerHTML=`<div class="wc-match">${wcCard(a)}<div class="wc-vs">VS</div>${wcCard(b)}</div>`;
+  const c=s.querySelectorAll('.wc-card'); c[0].onclick=()=>wcPick(a); c[1].onclick=()=>wcPick(b);
+}
+function wcWinner(p){
+  $('wc-round').textContent='🏆 최애'; $('wc-prog').textContent=''; $('wc-barfill').style.width='100%';
+  const m=DATA?DATA.entities.find(x=>x.name===p.n):null;
+  const extra=m&&m.summary?`<div class="desc" style="max-width:320px;margin:10px auto;color:#94a3b8;">${m.summary}</div>`:'';
+  $('wc-stage').innerHTML=`<div class="wc-champ">최종 선택: ${p.n}</div><div style="display:flex;justify-content:center;">${wcCard(p)}</div>${extra}`
+    +`<button class="go" id="wc-redo" style="max-width:240px;margin:16px auto 0;">🔄 다시 하기</button>`;
+  const r=$('wc-redo'); if(r) r.onclick=startWC;
 }
 
 async function claudeExplain(q, players, key){
