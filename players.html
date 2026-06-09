@@ -79,7 +79,7 @@
       <div class="wc-prog" id="wc-prog"></div>
       <div class="wc-bar"><div id="wc-barfill" style="width:0"></div></div>
       <div id="wc-stage"></div>
-      <p class="foot" style="margin-top:14px;">사진에 마우스를 올리면 소속팀·키·몸무게·나이가 나와요. (사진은 곧 추가)</p>
+      <p class="foot" style="margin-top:14px;">사진에 마우스를 올리면 소속팀·키·몸무게·나이가 나와요.</p>
     </div>
   </div>
 
@@ -117,6 +117,10 @@ function show(v){
   if(v==='visual') startWC();
 }
 document.querySelectorAll('[data-v]').forEach(b=>b.addEventListener('click',()=>show(b.dataset.v)));
+// 해시 딥링크(공유·캡처용): #visual / #style / #style=쿼리  (load 이후 실행 — WC_PLAYERS 등 초기화 보장)
+window.addEventListener('load', ()=>{ const h=decodeURIComponent(location.hash.slice(1));
+  if(h==='visual') show('visual');
+  else if(h.indexOf('style')===0){ show('style'); const i=h.indexOf('='); if(i>0){ const v=h.slice(i+1); const t=()=>{const el=$('q'); if(el)el.value=v; if(typeof extractor!=='undefined'&&extractor) run(); else setTimeout(t,400);}; setTimeout(t,800); } } });
 
 // ---- 예시 칩 ----
 const EX=['데 브라위너처럼 시야가 넓고 패스가 좋은 미드필더','수비가 단단하고 공중볼에 강한 센터백',
