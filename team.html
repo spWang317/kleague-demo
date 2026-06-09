@@ -165,7 +165,8 @@ async function fetchDist() {
   const lim = state.dist.pref==='required' ? state.dist.limit : 0;
   // 도달 가능 직선반경(넉넉히): 자차 ~분당 1.6km / 대중교통 ~분당 0.9km. 필수면 한도기준, 선호면 권역(자차180·대중90km)
   const cutKm = lim ? (mode==='car'? lim*1.6 : lim*0.9) : (mode==='car'? 180 : 90);
-  const near = all.filter((d,i)=> d.km<=cutKm || i<6).slice(0,18);   // 반경 안 + 항상 최근접 6, 최대 18팀만 실제 호출
+  const cap = mode==='transit' ? 9 : 18;   // 대중교통(Tmap 무료 10건/일) 보호: 최근접 9개만
+  const near = all.filter((d,i)=> d.km<=cutKm || i<6).slice(0,cap);   // 반경 안 + 항상 최근접 6
   const dests = near.map(d=>({team:d.team,x:d.x,y:d.y}));
   try {
     const r = await fetch(PROXY, { method:'POST', headers:{'content-type':'application/json'},
