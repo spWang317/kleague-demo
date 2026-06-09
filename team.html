@@ -50,6 +50,7 @@
 </div>
 
 <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=84b25321338b1968ec44ed454cb51301&libraries=services"></script>
+<script src="//t1.daumcdn.net/mapjsdsdk/postcode/prod/postcode.v2.js"></script>
 <script>
 // ===== Data =====
 const TEAMS_K1 = ['전북','울산','포항','FC서울','인천','대전','안양','제주','강원','광주','부천'];
@@ -132,6 +133,15 @@ const state = {
 function distMins(team) {
   const m = state.dist.live[team];
   return (m == null) ? null : m;
+}
+// 우편번호 검색 팝업(다음, 무료·무키) → 도로명주소 선택 → 지오코딩
+function openPostcode() {
+  if (!(window.daum && daum.Postcode)) { state.dist.err='주소 검색 로딩 중이에요. 잠시 후 다시.'; render(); return; }
+  new daum.Postcode({ oncomplete: function (data) {
+    const a = data.roadAddress || data.jibunAddress || data.address;
+    const el = document.getElementById('daddr'); if (el) el.value = a;
+    state.dist.addr = a; geocodeAddr();
+  }}).open();
 }
 // 주소 → 좌표 (카카오 지오코더, 클라이언트)
 function geocodeAddr() {
@@ -293,10 +303,11 @@ function renderDistCard(app) {
       <h2>카드 1 / ${TOTAL} — 경기장 접근성</h2>
       <p class="q">직관 가려면 가까워야죠. 사시는 곳 주소를 알려주세요.</p>
       <div style="display:flex;gap:8px;">
-        <input id="daddr" placeholder="예: 서울 강남구 테헤란로 152 (도로명/지번)" value="${d.addr||''}"
+        <input id="daddr" placeholder="주소 검색을 누르거나 직접 입력" value="${d.addr||''}"
           onkeydown="if(event.key==='Enter'){event.preventDefault();geocodeAddr();}"
           style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:10px 12px;font-size:14px;">
-        <button onclick="geocodeAddr()" style="white-space:nowrap;">📍 확인</button>
+        <button onclick="openPostcode()" style="white-space:nowrap;">🔍 주소 검색</button>
+        <button onclick="geocodeAddr()" class="secondary" style="white-space:nowrap;">확인</button>
       </div>
       ${d.loading?`<div style="color:#60a5fa;font-size:13px;margin-top:8px;">📍 실제 소요시간 계산 중…</div>`
         : d.err?`<div style="color:#fbbf24;font-size:13px;margin-top:8px;">${d.err}</div>`
