@@ -480,7 +480,7 @@ function restart() { state.step = -1; state.prefs = {}; state.dist = { addr:'', 
 const PROXY='https://kleague-proxy.wltjdtjdvlf.workers.dev';  // 키는 서버 프록시에 보관
 function aiErr(status, body){ const t=(body||'').toLowerCase();
   if(status===503 || t.indexOf('ai_disabled')>=0) return 'AI 기능이 현재 꺼져 있어요';
-  if(t.indexOf('credit')>=0 || t.indexOf('balance')>=0) return 'AI 사용량·비용 한도에 도달해 일시 중단됐어요';
+  if(status===403 || t.indexOf('forbidden')>=0 || t.indexOf('not allowed')>=0 || t.indexOf('credit')>=0 || t.indexOf('balance')>=0) return 'AI 사용량·비용 한도(또는 결제 상태)로 일시 중단됐어요';
   if(status===429) return 'AI 요청이 몰려서 잠시 후 다시 시도해 주세요';
   return 'AI 호출에 실패했어요('+status+')'; }
 
