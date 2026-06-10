@@ -198,7 +198,7 @@ async function fetchDist() {
       body: JSON.stringify({ type:'dist', mode, origin:{x:ox,y:oy}, dests }) });
     const j = await r.json();
     state.dist.live = (j && j.times) || {};   // 컷에서 빠진 먼 팀은 live에 없음 → distMins null → 후순위/제외
-    if (!Object.values(state.dist.live).some(v => v != null)) state.dist.err='경로를 계산하지 못했어요(키/한도 확인).';
+    if (!Object.values(state.dist.live).some(v => v != null)) state.dist.err = mode==='transit' ? '대중교통 시간을 가져오지 못했어요 (일일 한도 초과일 수 있어요 — 자차로 바꿔보세요).' : '자차 경로를 못 가져왔어요. 잠시 후 다시 시도해 주세요.';
   } catch(e) { state.dist.err='거리 계산 실패('+(e.message||e)+')'; }
   state.dist.loading=false; render();
 }
@@ -478,6 +478,11 @@ function restart() { state.step = -1; state.prefs = {}; state.dist = { addr:'', 
 
 // ===== AI 에이전트 (Claude, 키는 localStorage 공유) =====
 const PROXY='https://kleague-proxy.wltjdtjdvlf.workers.dev';  // 키는 서버 프록시에 보관
+function aiErr(status, body){ const t=(body||'').toLowerCase();
+  if(status===503 || t.indexOf('ai_disabled')>=0) return 'AI 기능이 현재 꺼져 있어요';
+  if(t.indexOf('credit')>=0 || t.indexOf('balance')>=0) return 'AI 사용량·비용 한도에 도달해 일시 중단됐어요';
+  if(status===429) return 'AI 요청이 몰려서 잠시 후 다시 시도해 주세요';
+  return 'AI 호출에 실패했어요('+status+')'; }
 
 // ===== 팀 바로가기 링크 (인스타/최근영상/일정) =====
 const IG={'강원':'gangwon_fc','경남':'gyeongnamfc','광주':'gwangju_fc','김천':'gimcheonfc','김포':'gimpofc_official','김해':'gimhaefc2008','대구':'daegufc.co.kr','대전':'daejeon_hana','부산':'busaniparkfc','부천':'bucheonfc1995','FC서울':'fcseoul','서울E':'seouleland','성남':'sfc.seongnam','수원삼성':'suwonsamsungfc','수원FC':'suwonfc','안산':'ansan_greeners_fc','안양':'fc_anyang','용인':'yonginfc','울산':'uhdfc_1983','인천':'incheonutd','전남':'jeonnamdragons_fc','전북':'jeonbuk1994','제주':'jejuskfc_official','천안':'cheonancityfc','충남아산':'asanfc2020','충북청주':'chfc_2023','파주':'pajufrontierfc','포항':'fc.pohangsteelers','화성':'hwaseongfc_official'};
@@ -492,7 +497,7 @@ async function claudeText(prompt, maxTok) {
     headers:{'content-type':'application/json'},
     body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:maxTok||600,messages:[{role:'user',content:prompt}]})
   });
-  if(!r.ok) throw new Error('API '+r.status);
+  if(!r.ok){ const _t=await r.text().catch(()=>''); throw new Error(aiErr(r.status,_t)); }
   const d=await r.json();
   return (d.content && d.content[0] && d.content[0].text || '').trim();
 }
@@ -509,7 +514,7 @@ async function whyThisTeam(results) {
   try{
     const txt=await claudeText(prompt, 400);
     box.innerHTML=`<div class="result-group" style="border-color:#7c3aed;"><h3 style="color:#a78bfa;">🤖 왜 ${top.team}일까요?</h3><div style="color:#cbd5e1;font-size:14px;line-height:1.65;">${txt}</div></div>`;
-  }catch(e){ box.innerHTML=''; }
+  }catch(e){ box.innerHTML='<div class="result-group" style="border-color:#64748b;"><div class="empty-result" style="font-size:13px;">⚠️ '+(e.message||e)+'</div></div>'; }
 }
 async function aiSearch(btn) {
   const q=document.getElementById('nlq').value.trim();
@@ -527,7 +532,7 @@ async function aiSearch(btn) {
     state.prefs={}; AXES.forEach(a=>{ state.prefs[a.key]=j.prefs&&j.prefs[a.key]||'neutral'; });
     state.dist={region:j.region||'', mode:j.mode||'car', pref:(j.region?(j.distPref||'preferred'):''), limit:+j.limit||60};
     state.step=AXES.length+1; render();
-  }catch(e){ btn.textContent='AI로 바로 찾기 →'; btn.disabled=false; alert('AI 분석 실패: '+(e.message||e)); }
+  }catch(e){ btn.textContent='AI로 바로 찾기 →'; btn.disabled=false; alert('⚠️ '+(e.message||e)+'\n\n아래 "카드로 직접 →"으로 골라주세요.'); }
 }
 
 render();

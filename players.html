@@ -125,6 +125,11 @@ EX.forEach(t=>{const c=document.createElement('span');c.className='chip';c.textC
 // ---- API 키 저장/불러오기 (이 브라우저 localStorage) ----
 // AI 키는 서버(Cloudflare Worker 프록시)에 보관 — 사용자 입력 불필요
 const PROXY='https://kleague-proxy.wltjdtjdvlf.workers.dev';
+function aiErr(status, body){ const t=(body||'').toLowerCase();
+  if(status===503 || t.indexOf('ai_disabled')>=0) return 'AI 기능이 현재 꺼져 있어요';
+  if(t.indexOf('credit')>=0 || t.indexOf('balance')>=0) return 'AI 사용량·비용 한도에 도달해 일시 중단됐어요';
+  if(status===429) return 'AI 요청이 몰려서 잠시 후 다시 시도해 주세요';
+  return 'AI 호출에 실패했어요('+status+')'; }
 
 // ===== 팀 바로가기 링크 (인스타/최근영상/일정) =====
 const IG={'강원':'gangwon_fc','경남':'gyeongnamfc','광주':'gwangju_fc','김천':'gimcheonfc','김포':'gimpofc_official','김해':'gimhaefc2008','대구':'daegufc.co.kr','대전':'daejeon_hana','부산':'busaniparkfc','부천':'bucheonfc1995','서울':'fcseoul','서울E':'seouleland','성남':'sfc.seongnam','수원':'suwonsamsungfc','수원FC':'suwonfc','안산':'ansan_greeners_fc','안양':'fc_anyang','용인':'yonginfc','울산':'uhdfc_1983','인천':'incheonutd','전남':'jeonnamdragons_fc','전북':'jeonbuk1994','제주':'jejuskfc_official','천안':'cheonancityfc','충남아산':'asanfc2020','충북청주':'chfc_2023','파주':'pajufrontierfc','포항':'fc.pohangsteelers','화성':'hwaseongfc_official'};
@@ -180,7 +185,7 @@ async function run(){
     renderRows(top.map(c=>({c, reason:reasons[c.name]})), true);
     $('status').textContent='✅ 임베딩 순위 + Claude 추천이유 (우리 데이터 기반)';
     $('go').disabled=false; $('go').textContent='닮은 선수 찾기'; return;
-  }catch(e){ $('status').textContent='AI 이유 생성 실패('+(e.message||e)+') — 순위만 표시'; }
+  }catch(e){ $('status').textContent='⚠️ '+(e.message||e)+' — 순위만 표시'; }
   renderRows(top.map(c=>({c})), false);
   $('go').disabled=false; $('go').textContent='닮은 선수 찾기';
 }
@@ -217,7 +222,7 @@ async function verifyResults(){
         : `<span style="color:#fbbf24;">⚠️ 확인 필요</span> <span style="color:#94a3b8;">${r.note||''}</span>`;
     });
     if(vb){ vb.disabled=false; vb.textContent='🔍 다시 검증'; }
-  }catch(e){ if(vb){ vb.disabled=false; vb.textContent='검증 실패: '+(e.message||e); } }
+  }catch(e){ if(vb){ vb.disabled=false; vb.textContent='⚠️ '+(e.message||e); } }
 }
 async function claudeVerify(players){
   const list=players.map(x=>`${x.name}(${x.team})`).join(', ');
@@ -225,7 +230,7 @@ async function claudeVerify(players){
   const r=await fetch(PROXY,{method:'POST',
     headers:{'content-type':'application/json'},
     body:JSON.stringify({model:'claude-haiku-4-5',max_tokens:2000,tools:[{type:'web_search_20260209',name:'web_search',allowed_callers:['direct']}],messages:[{role:'user',content:prompt}]})});
-  if(!r.ok){ throw new Error('API '+r.status); }
+  if(!r.ok){ const _t=await r.text().catch(()=>''); throw new Error(aiErr(r.status,_t)); }
   const d=await r.json();
   const text=(d.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
   const a=text.indexOf('['), z=text.lastIndexOf(']');
@@ -295,7 +300,7 @@ async function claudeExplain(q, players){
   const r=await fetch(PROXY,{method:'POST',
     headers:{'content-type':'application/json'},
     body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1200,messages:[{role:'user',content:prompt}]})});
-  if(!r.ok){ throw new Error('API '+r.status); }
+  if(!r.ok){ const _t=await r.text().catch(()=>''); throw new Error(aiErr(r.status,_t)); }
   const d=await r.json();
   let t=(d.content&&d.content[0]&&d.content[0].text||'').trim().replace(/^```(json)?/i,'').replace(/```$/,'').trim();
   const arr=JSON.parse(t); return Object.fromEntries((Array.isArray(arr)?arr:[]).map(p=>[p.name,p.reason]));
