@@ -93,7 +93,7 @@
       <button class="go" id="go" disabled>AI 모델 불러오는 중…</button>
       <div class="status" id="status">최초 1회 모델 다운로드(약 1분). 이후엔 바로 동작합니다.</div>
     </div>
-    <div style="font-size:11px;color:#64748b;margin-top:8px;line-height:1.5;">🤖 Claude가 <b>우리 검증 데이터만 근거로</b> 추천 이유를 작성하고, 결과의 현역 여부를 웹 검색으로 검증합니다(외부 지식 금지 = 할루시네이션 차단).</div>
+    <div style="font-size:11px;color:#64748b;margin-top:8px;line-height:1.5;">🧠 문장 임베딩(multilingual-e5)으로 <b>이름이 아니라 "의미"</b>가 닮은 선수를 찾습니다. 별도 서버·키 없이 브라우저에서 직접 실행돼요.</div>
     <div id="results"></div>
     <p class="foot">
       엔진: 문장 임베딩 <b>multilingual-e5</b> · 코사인 유사도 (브라우저에서 직접 실행 · 서버/키 없음)<br>
@@ -176,23 +176,16 @@ async function run(){
     if(la!==lb) return la-lb;
     return b.score-a.score;
   });
-  // 임베딩+가중 순위 top8 (순서 고정). 키 있으면 Claude가 순서 유지하며 추천이유만 작성.
+  // 임베딩(multilingual-e5) 의미 검색 결과 top8 — 브라우저에서 직접 실행
   const top=pool.slice(0,8);
   lastTop=top;
-  try{
-    $('status').textContent='🤖 Claude가 추천 이유 작성 중…';
-    const reasons=await claudeExplain(q, top);
-    renderRows(top.map(c=>({c, reason:reasons[c.name]})), true);
-    $('status').textContent='✅ 임베딩 순위 + Claude 추천이유 (우리 데이터 기반)';
-    $('go').disabled=false; $('go').textContent='닮은 선수 찾기'; return;
-  }catch(e){ $('status').textContent='⚠️ '+(e.message||e)+' — 순위만 표시'; }
   renderRows(top.map(c=>({c})), false);
+  $('status').textContent='✅ 임베딩 의미 검색 결과';
   $('go').disabled=false; $('go').textContent='닮은 선수 찾기';
 }
 
 function renderRows(items, ai){
-  let html='<h2>이 스타일과 닮은 K리그 선수'+(ai?' · AI 추천':'')+'</h2>';
-  html+='<button class="go" id="verifyBtn" style="margin:0 0 12px;background:#7c3aed;">🔍 현역·정확성 AI 검증 (웹 검색)</button>';
+  let html='<h2>이 스타일과 닮은 K리그 선수</h2>';
   items.forEach((it,i)=>{
     const c=it.c||{};
     const lg=c.league==='K1'?'1부':(c.league==='K2'?'2부':'');
@@ -203,10 +196,9 @@ function renderRows(items, ai){
     html+=`<div class="row"><div class="top">
       <div><span class="rank">${i+1}</span><span class="nm">${c.name||''}</span>
         <div class="meta">${c.team||''}${lg?` (${lg})`:''}${c.pos?` · ${c.pos}`:''}${nt}</div>${aw}</div>
-      ${sim}</div>${desc}<div class="desc" id="vd-${i}"></div>${c.team?teamLinksHtml(c.team):''}</div>`;
+      ${sim}</div>${desc}${c.team?teamLinksHtml(c.team):''}</div>`;
   });
   $('results').innerHTML=html;
-  const vb=$('verifyBtn'); if(vb) vb.onclick=verifyResults;
 }
 
 async function verifyResults(){

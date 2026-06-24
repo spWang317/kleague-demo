@@ -291,11 +291,6 @@ function renderIntro(app) {
         <div style="font-size:13px;color:#94a3b8;margin-top:8px;margin-bottom:4px;">국제대회</div>
         <label><input type="checkbox" id="aclOnly"> 최근 10년 ACL 진출 경험 있는 팀만 보기</label>
       </div>
-      <div style="margin-top:16px;border-top:1px solid #334155;padding-top:14px;">
-        <div style="font-size:13px;color:#a78bfa;margin-bottom:6px;">🤖 또는 한 문장으로 — AI가 카드를 대신 채워드려요</div>
-        <input id="nlq" placeholder="예: 집에서 가깝고 응원 뜨거운 우승권 팀" style="width:100%;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:9px 11px;font-size:14px;">
-        <button onclick="aiSearch(this)" style="margin-top:8px;width:100%;background:#7c3aed;">AI로 바로 찾기 →</button>
-      </div>
       <div class="nav">
         <span></span>
         <button onclick="startCards()">카드로 직접 →</button>
@@ -436,8 +431,7 @@ function renderResults(app) {
       if (!isFull && groups[k].length > 0) break;
     }
   }
-  app.innerHTML = html + '<div id="linksbox" style="margin-top:10px;"></div><div id="whybox" style="margin-top:4px;"></div>';
-  whyThisTeam(results);
+  app.innerHTML = html + '<div id="linksbox" style="margin-top:10px;"></div>';
 }
 
 function teamCardHtml(r) {
